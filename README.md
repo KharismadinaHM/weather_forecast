@@ -246,16 +246,48 @@ chmod +x scripts/backup.sh
 ### Managing the GCP Deployment
 
 ```bash
-# View logs
+# View live logs
 docker compose -f docker-compose.prod.yml logs -f --tail=100 agent
-
-# Restart agent after updates
-git pull
-docker compose -f docker-compose.prod.yml up -d --build
 
 # Stop all services
 docker compose -f docker-compose.prod.yml down
 ```
+
+---
+
+## 🔄 Development & Feature Update Workflow
+
+How to develop new features using **Antigravity IDE** locally and seamlessly update your active **GCP Server**:
+
+```
+┌─────────────────────────┐         ┌─────────────────────────┐         ┌─────────────────────────┐
+│   1. Antigravity IDE    │ ──────> │    2. GitHub Remote     │ ──────> │    3. GCP Cloud Server  │
+│   (Local Development)   │ git push│ (github.com/.../repo)   │ git pull│   (24/7 Live Production)│
+└─────────────────────────┘         └─────────────────────────┘         └─────────────────────────┘
+```
+
+### Step 1: Develop & Test in Antigravity (Local Machine)
+1. Request new features, indicators, or adjustments directly in Antigravity IDE.
+2. Antigravity writes the code, verifies with unit tests (`make test`), and commits & pushes to GitHub:
+   ```bash
+   git push origin main
+   ```
+
+### Step 2: Deploy Updates to GCP Server (1-Click Command)
+In your GCP VM terminal (SSH), run the automated zero-downtime deployment script:
+```bash
+cd weather_forecast
+./scripts/deploy.sh
+```
+
+**What `./scripts/deploy.sh` automatically does:**
+1. Pulls the latest code from GitHub (`git pull origin main`).
+2. Runs database migrations automatically if new tables or columns were added (`alembic upgrade head`).
+3. Rebuilds and restarts the container stack with zero manual configuration.
+4. Performs a health check to verify everything is running smoothly.
+
+> 🛡️ **Data Safety Guarantee**: All database records (historical observations, predictions, paper trades, PnL) are preserved across updates because PostgreSQL stores its data in the isolated Docker volume (`postgres_prod_data`).
+
 
 ---
 
