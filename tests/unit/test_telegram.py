@@ -103,7 +103,6 @@ async def test_telegram_client_unconfigured_graceful_fallback() -> None:
     assert res is False
 
 
-
 @pytest.mark.asyncio
 async def test_telegram_client_mock_http_send() -> None:
     """Verify TelegramClient executes POST request against Telegram API endpoint."""

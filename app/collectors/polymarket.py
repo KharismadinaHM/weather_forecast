@@ -53,7 +53,6 @@ class PolymarketCollector:
                 logger.error("Polymarket Gamma connection error", error=str(e), path=path)
                 raise
 
-
     def discover_hk_weather_events(self, active_only: bool = True) -> list[dict[str, Any]]:
         """Query Gamma API dynamically for Hong Kong weather related events."""
         params: dict[str, Any] = {

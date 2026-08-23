@@ -18,4 +18,3 @@ __all__ = [
     "run_missing_market_alert_job",
     "run_health_check_job",
 ]
-
