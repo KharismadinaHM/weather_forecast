@@ -9,6 +9,7 @@ from app.backtest.metrics import BacktestMetricsCalculator
 from app.backtest.simulator import SettledTrade
 from app.config.settings import Settings, get_settings
 from app.logging_config import get_logger
+from app.storage.db import get_db_session
 from app.storage.models import (
     ModelRun,
     PaperTrade,
@@ -18,6 +19,7 @@ from app.storage.models import (
     WeatherForecast,
     WeatherObservation,
 )
+from app.telegram.client import TelegramClient
 from app.telegram.formatter import TelegramFormatter
 from app.trading.risk import RiskEngine
 
@@ -324,3 +326,83 @@ class TelegramCommandHandler:
             "/pause - Activate kill switch (halt execution)\n"
             "/resume - Deactivate kill switch (resume execution)"
         )
+
+    async def start_polling(self, poll_interval: float = 1.0) -> None:
+        """Continuously poll Telegram getUpdates endpoint and respond to incoming commands."""
+        import asyncio
+
+        import httpx
+
+        token = self.settings.TELEGRAM_BOT_TOKEN
+        if not token:
+            logger.error("Cannot start polling: TELEGRAM_BOT_TOKEN is not configured in .env")
+            return
+
+        client = TelegramClient(settings=self.settings)
+        offset = 0
+        logger.info("Starting Telegram interactive bot polling loop...")
+
+        async with httpx.AsyncClient(timeout=35.0) as http:
+            while True:
+                try:
+                    url = f"https://api.telegram.org/bot{token}/getUpdates"
+                    params = {"offset": offset, "timeout": 20}
+                    resp = await http.get(url, params=params)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        updates = data.get("result", [])
+                        for update in updates:
+                            update_id = update.get("update_id", 0)
+                            offset = max(offset, update_id + 1)
+
+                            msg = update.get("message") or update.get("channel_post")
+                            if not msg:
+                                continue
+
+                            chat_id = str(msg.get("chat", {}).get("id"))
+                            text = str(msg.get("text", "")).strip()
+
+                            if not text.startswith("/"):
+                                continue
+
+                            cmd = text.split()[0].lower()
+                            logger.info("Received Telegram command", command=cmd, chat_id=chat_id)
+
+                            if cmd == "/start":
+                                reply = (
+                                    "👋 <b>Selamat Datang di Hong Kong Weather AI!</b>\n\n"
+                                    "Bot ini memantau prediksi cuaca Hong Kong, "
+                                    "harga pasar Polymarket, dan sinyal trading.\n\n"
+                                    + self._handle_help()
+                                )
+                            else:
+                                with get_db_session() as sess:
+                                    reply = self.handle_command(sess, text)
+
+                            await client.send_message(reply, chat_id=chat_id)
+
+                    elif resp.status_code == 409:
+                        logger.warning("Telegram polling conflict; retrying in 5s...")
+                        await asyncio.sleep(5.0)
+                    else:
+                        logger.warning("Telegram getUpdates non-200", status_code=resp.status_code)
+
+                except asyncio.CancelledError:
+                    logger.info("Polling loop cancelled")
+                    break
+                except Exception as exc:
+                    logger.error("Error during Telegram polling", error=str(exc))
+                    await asyncio.sleep(2.0)
+
+                await asyncio.sleep(poll_interval)
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    logger.info("Starting Telegram Command Bot (Listening for commands)...")
+    handler = TelegramCommandHandler()
+    try:
+        asyncio.run(handler.start_polling())
+    except KeyboardInterrupt:
+        logger.info("Telegram Bot stopped by user.")
