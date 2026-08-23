@@ -29,8 +29,17 @@ class PolymarketCollector:
     def _fetch_gamma(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """Fetch endpoint from Polymarket Gamma API with retries."""
         url = f"{self.gamma_url}/{path.lstrip('/')}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json",
+        }
         transport = httpx.HTTPTransport(retries=3)
-        with httpx.Client(transport=transport, timeout=self.timeout) as client:
+        with httpx.Client(
+            transport=transport, timeout=self.timeout, follow_redirects=True, headers=headers
+        ) as client:
             try:
                 response = client.get(url, params=params)
                 response.raise_for_status()
@@ -43,6 +52,7 @@ class PolymarketCollector:
             except httpx.RequestError as e:
                 logger.error("Polymarket Gamma connection error", error=str(e), path=path)
                 raise
+
 
     def discover_hk_weather_events(self, active_only: bool = True) -> list[dict[str, Any]]:
         """Query Gamma API dynamically for Hong Kong weather related events."""
