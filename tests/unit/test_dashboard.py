@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.dashboard.queries import (
     evaluate_section35_gates_from_db,
+    get_diurnal_timing_insight,
     get_freshness_metrics,
     get_latest_predictions_df,
     get_market_price_vs_model_df,
@@ -218,3 +219,40 @@ def test_get_paper_trades_and_pnl_df(db_session: Session) -> None:
     assert gate_res.total_resolved_trades == 1
     assert gate_res.gate_sample_size_passed is False  # N < 50
     assert gate_res.verdict == "CONTINUE_PAPER_TRADING"
+
+
+def test_get_diurnal_timing_insight(db_session: Session) -> None:
+    """Verify calculation of diurnal peak hour and tactical entry recommendation (WIB)."""
+    target_d = date(2026, 8, 27)
+    market = PolymarketMarket(
+        market_id="mkt_dash_4",
+        event_id="evt_dash_4",
+        question="Highest temp in HK on Aug 27?",
+        slug="hk-weather-aug27",
+        target_date=target_d,
+        status="active",
+    )
+    db_session.add(market)
+    db_session.flush()
+
+    pred = Prediction(
+        market_id=market.market_id,
+        prediction_timestamp=datetime.now(UTC),
+        model_version="weather-v001",
+        outcome="34°C",
+        model_probability=0.48,
+        market_probability=0.30,
+        edge=0.18,
+        expected_value=0.16,
+    )
+    db_session.add(pred)
+    db_session.commit()
+
+    insight = get_diurnal_timing_insight(db_session)
+    assert insight["recommended_outcome"] == "34°C"
+    assert insight["decision"] == "BUY"
+    assert "14:00 HKT" in insight["peak_hkt"]
+    assert "13:00 WIB" in insight["peak_wib"]
+    assert "WIB" in insight["recommended_entry_wib"]
+    assert "Suhu tertinggi di HK pd tgl" in insight["formatted_insight"]
+    assert "baiknya anda buy market pada suhu 34°C" in insight["formatted_insight"]

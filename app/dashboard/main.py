@@ -4,6 +4,7 @@ import streamlit as st
 
 from app.dashboard.queries import (
     evaluate_section35_gates_from_db,
+    get_diurnal_timing_insight,
     get_freshness_metrics,
     get_latest_predictions_df,
     get_market_price_vs_model_df,
@@ -37,19 +38,22 @@ st.markdown(
         color: #ff5252;
         font-weight: bold;
     }
-    .gate-passed {
-        background-color: #1b5e20;
-        color: #ffffff;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.85rem;
+    .tactical-box {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        border-radius: 10px;
+        padding: 18px 22px;
+        color: white;
+        margin-bottom: 20px;
+        border-left: 6px solid #00e676;
     }
-    .gate-failed {
-        background-color: #b71c1c;
-        color: #ffffff;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.85rem;
+    .tactical-title {
+        font-size: 1.15rem;
+        font-weight: bold;
+        margin-bottom: 8px;
+    }
+    .tactical-text {
+        font-size: 1.05rem;
+        line-height: 1.5;
     }
     </style>
     """,
@@ -78,6 +82,7 @@ try:
         pred_df = get_latest_predictions_df(session, limit=100)
         trades_df, pnl_df = get_paper_trades_and_pnl_df(session)
         gate_res = evaluate_section35_gates_from_db(session)
+        timing_insight = get_diurnal_timing_insight(session)
 
         # ---------------------------------------------------------
         # 1. Freshness & Data Pipeline Status
@@ -153,9 +158,65 @@ try:
         st.markdown("---")
 
         # ---------------------------------------------------------
-        # 2. Section 35 Quantitative Go/No-Go Gates
+        # 2. Tactical Diurnal Peak & Entry Timing Insight
         # ---------------------------------------------------------
-        st.subheader("2. 🛡️ Section 35 Quantitative Go/No-Go Gates")
+        st.subheader("2. 💡 Tactical Timing & Peak Temperature Insight")
+
+        # Featured insight card with highlighted narrative
+        st.markdown(
+            f"""
+            <div class="tactical-box">
+                <div class="tactical-title">🎯 Panduan Waktu Entry & Jam Puncak Suhu</div>
+                <div class="tactical-text">
+                    <b>"{timing_insight["formatted_insight"]}"</b>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        t1, t2, t3, t4 = st.columns(4)
+        with t1:
+            st.metric(
+                label="Target Date",
+                value=f"{timing_insight['target_date_str']}",
+                delta="Hong Kong Daily",
+            )
+            st.caption("Tanggal pasar prediksi cuaca")
+        with t2:
+            st.metric(
+                label="Jam Puncak Suhu HK",
+                value=f"{timing_insight['peak_hkt']}",
+                delta=f"≈ {timing_insight['peak_wib']}",
+                delta_color="normal",
+            )
+            st.caption("Puncak radiasi matahari harian")
+        with t3:
+            decision_badge = "🟢 BUY" if timing_insight["decision"] == "BUY" else "🟡 HOLD"
+            st.metric(
+                label="Rekomendasi Outcome",
+                value=f"{decision_badge} {timing_insight['recommended_outcome']}",
+                delta=f"Edge: {timing_insight['edge']:+.1%}",
+            )
+            st.caption(
+                f"Model: {timing_insight['model_prob']:.0%} vs Market: "
+                f"{timing_insight['market_price']:.0%}"
+            )
+        with t4:
+            st.metric(
+                label="Jam Beli Terbaik (WIB)",
+                value=f"{timing_insight['recommended_entry_wib']}",
+                delta=f"{timing_insight['recommended_entry_hkt']}",
+                delta_color="normal",
+            )
+            st.caption("Sebelum pergerakan harga menuju puncak")
+
+        st.markdown("---")
+
+        # ---------------------------------------------------------
+        # 3. Section 35 Quantitative Go/No-Go Gates
+        # ---------------------------------------------------------
+        st.subheader("3. 🛡️ Section 35 Quantitative Go/No-Go Gates")
 
         # Overall Verdict Banner
         if gate_res.verdict == "READY_FOR_LIVE_EXPERIMENT":
@@ -190,9 +251,9 @@ try:
         st.markdown("---")
 
         # ---------------------------------------------------------
-        # 3. Latest Predictions & Signals Table
+        # 4. Latest Predictions & Signals Table
         # ---------------------------------------------------------
-        st.subheader("3. 🎯 Latest Predictions & Signals")
+        st.subheader("4. 🎯 Latest Predictions & Signals")
         if not pred_df.empty:
             # Filter bar
             f_col1, f_col2 = st.columns([2, 4])
@@ -233,9 +294,9 @@ try:
         st.markdown("---")
 
         # ---------------------------------------------------------
-        # 4. Polymarket Price vs Model Probability Chart
+        # 5. Polymarket Price vs Model Probability Chart
         # ---------------------------------------------------------
-        st.subheader("4. 📈 Polymarket Price vs Model Probability")
+        st.subheader("5. 📈 Polymarket Price vs Model Probability")
         ts_df = get_market_price_vs_model_df(session)
         if not ts_df.empty:
             outcomes_list = list(ts_df["outcome"].unique())
@@ -248,16 +309,15 @@ try:
                 .bfill()
             )
             st.line_chart(pivot_chart, use_container_width=True)
-
         else:
             st.info("No active market price series available for plotting.")
 
         st.markdown("---")
 
         # ---------------------------------------------------------
-        # 5. Paper Trading History & Cumulative PnL
+        # 6. Paper Trading History & Cumulative PnL
         # ---------------------------------------------------------
-        st.subheader("5. 💼 Paper Trading Performance & Cumulative PnL")
+        st.subheader("6. 💼 Paper Trading Performance & Cumulative PnL")
         m_c1, m_c2, m_c3, m_c4 = st.columns(4)
 
         total_trades = len(trades_df)
