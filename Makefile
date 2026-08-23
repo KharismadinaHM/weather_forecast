@@ -44,6 +44,10 @@ install:
 dashboard:
 	$(VENV)/streamlit run app/dashboard/main.py
 
+seed:
+	$(VENV)/python scripts/seed_demo_data.py
+
 clean:
+
 	rm -rf .pytest_cache .mypy_cache .ruff_cache build dist *.egg-info
 
