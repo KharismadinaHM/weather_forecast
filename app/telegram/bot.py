@@ -39,7 +39,8 @@ class TelegramCommandHandler:
 
     def handle_command(self, session: Session, command: str) -> str:
         """Parse and execute a Telegram command string."""
-        cmd = command.strip().lower().split()[0] if command.strip() else ""
+        raw_token = command.strip().lower().split()[0] if command.strip() else ""
+        cmd = raw_token.split("@")[0] if raw_token else ""
 
         if cmd == "/status":
             return self._handle_status(session)
@@ -51,6 +52,8 @@ class TelegramCommandHandler:
             return self._handle_prediction(session)
         elif cmd == "/performance":
             return self._handle_performance(session)
+        elif cmd == "/dashboard":
+            return self._handle_dashboard()
         elif cmd == "/model":
             return self._handle_model(session)
         elif cmd == "/positions":
@@ -312,16 +315,32 @@ class TelegramCommandHandler:
             "opportunities."
         )
 
+    def _handle_dashboard(self) -> str:
+        return (
+            "📊 <b>HONG KONG WEATHER DASHBOARD</b>\n\n"
+            "Pantau visualisasi dan metrik real-time:\n"
+            "• 📡 Ingestion Pipeline Freshness\n"
+            "• 🛡️ Section 35 Quantitative 5 Hard Gates\n"
+            "• 💡 Jam Puncak Suhu HK & Jam Beli Terbaik (WIB)\n"
+            "• 🎯 Tabel Prediksi & Sinyal BUY/HOLD\n"
+            "• 📈 Grafik Time-Series Polymarket vs Model\n"
+            "• 💼 Riwayat Paper Trades & Cumulative PnL Curve\n\n"
+            "🌐 <b>Web Dashboard URL:</b>\n"
+            "<code>http://localhost:8501</code>\n\n"
+            "<i>(Jalankan <code>make dashboard</code> di terminal untuk membuka web)</i>"
+        )
+
     def _handle_help(self) -> str:
         return (
             "📖 <b>AVAILABLE TELEGRAM COMMANDS</b>\n\n"
-            "/status - System state, environment & database connectivity\n"
             "/today - Today's HKO observation & official forecast\n"
-            "/market - Active Polymarket HK weather markets & prices\n"
             "/prediction - Latest model probability distribution & edge\n"
+            "/market - Active Polymarket HK weather markets & prices\n"
             "/performance - Paper trading ROI, PnL & win rate\n"
-            "/model - Active model version & validation metrics\n"
+            "/dashboard - Streamlit web dashboard URL & feature list\n"
             "/positions - Current open trades & risk utilization\n"
+            "/model - Active model version & validation metrics\n"
+            "/status - System state, environment & database connectivity\n"
             "/health - Latency, API health & data quality checks\n"
             "/pause - Activate kill switch (halt execution)\n"
             "/resume - Deactivate kill switch (resume execution)"
