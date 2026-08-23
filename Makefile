@@ -47,6 +47,13 @@ dashboard:
 seed:
 	$(VENV)/python scripts/seed_demo_data.py
 
+run:
+	$(VENV)/python -m app.jobs.scheduler
+
+daemon:
+	$(VENV)/python -m app.jobs.scheduler --daemon --interval 900
+
+
 clean:
 
 	rm -rf .pytest_cache .mypy_cache .ruff_cache build dist *.egg-info

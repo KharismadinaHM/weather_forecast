@@ -63,7 +63,42 @@ class OrchestratorScheduler:
         logger.info("Orchestration cycle complete", results=results)
         return results
 
+    def start_daemon(self, interval_seconds: int = 900) -> None:
+        """Run continuous background loop fetching data periodically (PLAN.md Section 15)."""
+        import time
+
+        logger.info(
+            "Starting automated background scheduler daemon",
+            interval_seconds=interval_seconds,
+            interval_minutes=interval_seconds / 60.0,
+        )
+        while True:
+            try:
+                self.run_all_jobs_once()
+            except Exception as exc:
+                logger.error("Daemon cycle encountered error", error=str(exc))
+            time.sleep(interval_seconds)
+
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Hong Kong Weather Trading Orchestrator")
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Run continuously as background daemon every N seconds",
+    )
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=900,
+        help="Daemon interval in seconds (default: 900s / 15 minutes)",
+    )
+    args = parser.parse_args()
+
     scheduler = OrchestratorScheduler()
-    scheduler.run_all_jobs_once()
+    if args.daemon:
+        scheduler.start_daemon(interval_seconds=args.interval)
+    else:
+        scheduler.run_all_jobs_once()
