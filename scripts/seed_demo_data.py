@@ -1,7 +1,8 @@
-"""Seed realistic historical Polymarket weather markets, predictions, signals, and paper trades for demo."""
+"""Seed realistic historical Polymarket weather markets, predictions, and trades."""
 
-from datetime import UTC, date, datetime, timedelta
 import random
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -71,7 +72,7 @@ def seed_demo_data(session: Session) -> None:
                 target_date=target_d,
                 status="closed" if is_past else "active",
                 outcome_bucket_schema=bucket_schemas,
-                resolution_source_raw="https://www.hko.gov.hk - Hong Kong Observatory Daily Extract",
+                resolution_source_raw="https://www.hko.gov.hk - HKO Daily Extract",
             )
             session.add(mkt)
             session.flush()
@@ -116,7 +117,9 @@ def seed_demo_data(session: Session) -> None:
                 )
 
             # Generate Predictions and Signals
-            model_p = 0.15 + (0.30 if b_label in ["32°C", "33°C"] else 0.05) + random.uniform(-0.02, 0.04)
+            model_p = (
+                0.15 + (0.30 if b_label in ["32°C", "33°C"] else 0.05) + random.uniform(-0.02, 0.04)
+            )
             mkt_p = base_price
             edge_val = model_p - mkt_p
             net_ev = (model_p * (1.0 - 0.01)) - (mkt_p * (1.0 + 0.01))
@@ -138,7 +141,9 @@ def seed_demo_data(session: Session) -> None:
             sig = Signal(
                 prediction_id=pred.id,
                 decision="BUY" if is_buy else "HOLD",
-                reason="Positive EV & actionable statistical edge" if is_buy else "Edge below threshold",
+                reason="Positive EV & actionable statistical edge"
+                if is_buy
+                else "Edge below threshold",
                 recommended_price=round(mkt_p, 3) if is_buy else None,
                 recommended_size=1.0 if is_buy else 0.0,
                 risk_limit=2.0,
@@ -163,7 +168,9 @@ def seed_demo_data(session: Session) -> None:
                     pnl=round(pnl_val, 2) if is_past else None,
                     status="CLOSED" if is_past else "OPEN",
                     opened_at=pred.prediction_timestamp,
-                    closed_at=(pred.prediction_timestamp + timedelta(hours=18)) if is_past else None,
+                    closed_at=(pred.prediction_timestamp + timedelta(hours=18))
+                    if is_past
+                    else None,
                 )
                 session.add(paper)
 
@@ -174,4 +181,4 @@ def seed_demo_data(session: Session) -> None:
 if __name__ == "__main__":
     with get_db_session() as db_session:
         seed_demo_data(db_session)
-    print("✅ Demo data successfully seeded into database!")
+    logger.info("Demo data successfully seeded into database")

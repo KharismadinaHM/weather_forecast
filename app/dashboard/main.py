@@ -242,10 +242,13 @@ try:
             selected_outcome = st.selectbox("Select Outcome Bucket:", outcomes_list)
             chart_data = ts_df[ts_df["outcome"] == selected_outcome]
 
-            pivot_chart = chart_data.pivot(
-                index="timestamp", columns="series_type", values="value"
-            ).fillna(method="ffill")
+            pivot_chart = (
+                chart_data.pivot(index="timestamp", columns="series_type", values="value")
+                .ffill()
+                .bfill()
+            )
             st.line_chart(pivot_chart, use_container_width=True)
+
         else:
             st.info("No active market price series available for plotting.")
 
