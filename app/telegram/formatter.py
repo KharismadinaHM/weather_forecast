@@ -1,5 +1,6 @@
 """Message formatters for Telegram daily summaries, alerts, and command responses."""
 
+import html
 from datetime import date
 
 from app.backtest.metrics import BacktestReport
@@ -20,7 +21,9 @@ class TelegramFormatter:
         model_version: str = "weather-v001",
     ) -> str:
         """Format the daily summary message matching Section 14 format exactly."""
-        dist_parts = [f"{lbl} {prob * 100:.0f}%" for lbl, prob in model_distribution.items()]
+        dist_parts = [
+            f"{html.escape(lbl)} {prob * 100:.0f}%" for lbl, prob in model_distribution.items()
+        ]
         dist_str = "  ".join(dist_parts)
 
         dec_icon = "🟢" if decision == "BUY" else ("🟡" if decision == "HOLD" else "⚪")
@@ -36,7 +39,7 @@ class TelegramFormatter:
         if best_opportunity:
             lines.extend(
                 [
-                    f"<b>Best opportunity:</b> {best_opportunity.outcome_label}",
+                    f"<b>Best opportunity:</b> {html.escape(best_opportunity.outcome_label)}",
                     (
                         f"Model: {best_opportunity.model_probability * 100:.0f}%  "
                         f"Market: {best_opportunity.market_probability * 100:.0f}%  "
@@ -54,7 +57,7 @@ class TelegramFormatter:
         lines.extend(
             [
                 f"<b>Decision:</b> {dec_icon} {decision}   <b>Risk allocation:</b> {risk_str}",
-                f"<b>Model:</b> {model_version}",
+                f"<b>Model:</b> {html.escape(model_version)}",
             ]
         )
 
@@ -72,16 +75,16 @@ class TelegramFormatter:
         """Format an instant alert for a high-conviction BUY opportunity."""
         return (
             "🚨 <b>TRADE OPPORTUNITY DETECTED</b>\n\n"
-            f"<b>Market:</b> {market_question}\n"
+            f"<b>Market:</b> {html.escape(market_question)}\n"
             f"<b>Target Date:</b> {target_date.isoformat()}\n"
-            f"<b>Outcome:</b> 🎯 <code>{opportunity.outcome_label}</code>\n"
+            f"<b>Outcome:</b> 🎯 <code>{html.escape(opportunity.outcome_label)}</code>\n"
             f"<b>Model Probability:</b> {opportunity.model_probability:.1%}\n"
             f"<b>Market Price:</b> {opportunity.market_probability:.1%}\n"
             f"<b>Gross Edge:</b> {opportunity.gross_edge:+.1%}\n"
             f"<b>Net EV:</b> {opportunity.net_ev:+.1%}\n"
             f"<b>Recommended Allocation:</b> ${recommended_size:.2f}\n"
-            f"<b>Model Version:</b> {model_version}\n\n"
-            f"<i>{opportunity.rationale}</i>"
+            f"<b>Model Version:</b> {html.escape(model_version)}\n\n"
+            f"<i>{html.escape(opportunity.rationale)}</i>"
         )
 
     @classmethod
@@ -99,9 +102,9 @@ class TelegramFormatter:
         """Format a critical health alert (e.g. API failures after max retries)."""
         return (
             "🚨 <b>SYSTEM HEALTH ALERT</b>\n\n"
-            f"<b>Component:</b> {component}\n"
+            f"<b>Component:</b> {html.escape(component)}\n"
             f"<b>Status:</b> FAILED\n"
-            f"<b>Error:</b> <code>{error_message}</code>\n"
+            f"<b>Error:</b> <code>{html.escape(error_message)}</code>\n"
             "Please check system logs and container status."
         )
 
@@ -109,11 +112,14 @@ class TelegramFormatter:
     def format_performance_report(cls, report: BacktestReport) -> str:
         """Format paper trading performance summary for /performance command."""
         caveat_str = (
-            f"\n\n⚠️ <i>{report.sample_size_caveat}</i>" if report.is_insufficient_sample else ""
+            f"\n\n⚠️ <i>{html.escape(report.sample_size_caveat)}</i>"
+            if (report.is_insufficient_sample and report.sample_size_caveat is not None)
+            else ""
         )
+
         return (
             "📊 <b>PAPER TRADING PERFORMANCE</b>\n\n"
-            f"<b>Strategy:</b> {report.strategy_name}\n"
+            f"<b>Strategy:</b> {html.escape(report.strategy_name)}\n"
             f"<b>Total Resolved Trades:</b> {report.total_trades}\n"
             f"<b>Win Rate:</b> {report.win_rate:.1f}% "
             f"({report.winning_trades}W / {report.losing_trades}L)\n"
@@ -139,12 +145,12 @@ class TelegramFormatter:
         """Format system status message for /status command."""
         state_icon = "⏸️ PAUSED (Kill Switch Active)" if is_paused else "🟢 RUNNING"
         db_icon = "✅ CONNECTED" if db_healthy else "❌ ERROR"
-        pred_time = last_prediction_time or "None recorded"
+        pred_time = html.escape(last_prediction_time) if last_prediction_time else "None recorded"
 
         return (
             "🤖 <b>AGENT SYSTEM STATUS</b>\n\n"
             f"<b>Execution State:</b> {state_icon}\n"
-            f"<b>Environment:</b> {environment}\n"
+            f"<b>Environment:</b> {html.escape(environment)}\n"
             f"<b>Database:</b> {db_icon}\n"
             f"<b>Last Prediction Cycle:</b> {pred_time}\n"
             "Use /pause or /resume to control execution."

@@ -1,5 +1,6 @@
 """Telegram command dispatcher and interactive bot handlers (PLAN.md Section 14)."""
 
+import html
 from datetime import UTC, date, datetime
 
 from sqlalchemy import select
@@ -150,7 +151,7 @@ class TelegramCommandHandler:
 
         lines = ["📈 <b>ACTIVE POLYMARKET WEATHER MARKETS</b>\n"]
         for m in active_markets:
-            lines.append(f"<b>Question:</b> {m.question}")
+            lines.append(f"<b>Question:</b> {html.escape(m.question)}")
             lines.append(f"<b>Target Date:</b> {m.target_date.isoformat()}")
             lines.append("<b>Outcomes & Prices:</b>")
             for out in m.outcomes:
@@ -160,7 +161,7 @@ class TelegramCommandHandler:
                     .order_by(PolymarketPrice.timestamp.desc())
                 )
                 p_str = f"{latest_p * 100:.0f}¢" if latest_p is not None else "N/A"
-                lines.append(f"• {out.outcome_label}: <code>{p_str}</code>")
+                lines.append(f"• {html.escape(out.outcome_label)}: <code>{p_str}</code>")
             lines.append("")
 
         return "\n".join(lines)
@@ -182,15 +183,15 @@ class TelegramCommandHandler:
 
         lines = [
             "🔮 <b>LATEST PREDICTION RUN</b>\n",
-            f"<b>Market ID:</b> <code>{m_id}</code>",
-            f"<b>Model:</b> {matching_preds[0].model_version}",
+            f"<b>Market ID:</b> <code>{html.escape(m_id)}</code>",
+            f"<b>Model:</b> {html.escape(matching_preds[0].model_version)}",
             f"<b>Timestamp:</b> {ts_str}\n",
             "<b>Probabilities & Edge:</b>",
         ]
 
         for p in matching_preds:
             lines.append(
-                f"• <b>{p.outcome}:</b> Model {p.model_probability:.1%} vs "
+                f"• <b>{html.escape(p.outcome)}:</b> Model {p.model_probability:.1%} vs "
                 f"Market {p.market_probability:.1%} "
                 f"(Edge: <code>{p.edge:+.1%}</code>, Net EV: <code>{p.expected_value:+.1%}</code>)"
             )
