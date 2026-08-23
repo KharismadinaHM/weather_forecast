@@ -279,37 +279,47 @@ python -c "from app.jobs.health import run_health_check_job; import json; print(
 
 ---
 
-## Telegram Bot Setup
+## Telegram Bot Setup & Local Testing
 
-To interact with the bot in real-time via Telegram:
+You can interact and chat with the bot in real-time right from your local machine before deploying to GCP:
 
-1. Obtain bot credentials from [@BotFather](https://t.me/BotFather) and your chat ID from [@userinfobot](https://t.me/userinfobot).
-2. Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`.
-3. Start the interactive command listener:
+### Step 1: Initialize Chat with Your Bot
+> ⚠️ **IMPORTANT**: In Telegram, a bot cannot message you first until you initiate the conversation.
+1. Open your Telegram app and search for your bot username (from [@BotFather](https://t.me/BotFather)).
+2. Click **Start** (or send `/start`).
 
+### Step 2: Test Message Connection
+Verify that your credentials in `.env` are working:
 ```bash
-source .venv/bin/activate
-python -c "
-import asyncio
-from app.telegram.bot import TelegramCommandHandler
-handler = TelegramCommandHandler()
-asyncio.run(handler.start_polling())
-"
+# Send a test greeting message to your Telegram
+make test-telegram
 ```
 
-**Available bot commands:**
+### Step 3: Start Interactive Bot Listener Locally
+Run the interactive listener to chat and send commands to the bot:
+```bash
+# Start bot listener (responds to /today, /status, etc.)
+make bot
+```
+
+---
+
+### Available Telegram Commands
+
 | Command | Description |
 | :--- | :--- |
-| `/status` | System health and scheduler status |
-| `/today` | Today's model prediction & market prices |
-| `/market <id>` | Details for a specific Polymarket market |
-| `/positions` | Open paper trade positions |
-| `/performance` | Strategy PnL summary |
-| `/model` | Current ML model metadata |
-| `/health` | Database latency & data freshness |
-| `/pause` | Activate kill switch (stop generating signals) |
-| `/resume` | Deactivate kill switch |
-| `/help` | List all commands |
+| `/today` | Today's official HKO weather observation & max/min temperature forecast |
+| `/prediction` | Latest ML model probability distribution, gross edge & net EV |
+| `/market` | Active Polymarket weather contracts & current market prices |
+| `/performance` | Paper trading strategy PnL, Win Rate %, and total trades |
+| `/positions` | Current open paper trade positions & risk allocation |
+| `/model` | Active ML model metadata, Brier score & validation status |
+| `/status` | System runtime state, environment, and pipeline status |
+| `/health` | Database latency, freshness checks & data quality status |
+| `/pause` | 🚨 **Kill Switch**: Immediately halts trade signal generation |
+| `/resume` | Deactivates kill switch and resumes active strategy evaluation |
+| `/help` | Display list of all available commands |
+
 
 ---
 
@@ -347,19 +357,24 @@ TELEGRAM_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
 ## Make Commands Reference
 
 ```bash
-make help        # Show all available commands
-make up          # Start PostgreSQL in Docker
-make down        # Stop all containers
-make logs        # Tail container logs
-make migrate     # Run database migrations
-make test        # Run full test suite (79 tests)
-make lint        # Run ruff linting
-make typecheck   # Run mypy type checking
-make dashboard   # Launch Streamlit monitoring dashboard
-make seed        # Seed realistic demo data into database
-make shell-db    # Open psql shell in database
-make clean       # Remove caches and build artifacts
+make help          # Show all available commands
+make up            # Start PostgreSQL in Docker
+make down          # Stop all containers
+make logs          # Tail container logs
+make migrate       # Run database migrations
+make test          # Run full test suite (80 tests)
+make lint          # Run ruff linting
+make typecheck     # Run mypy type checking
+make dashboard     # Launch Streamlit monitoring dashboard
+make seed          # Seed realistic demo data into database
+make bot           # Start interactive Telegram command bot
+make test-telegram # Send a test message to verify Telegram credentials
+make run           # Run 1 full orchestration cycle
+make daemon        # Run continuous background scheduler loop
+make shell-db      # Open psql shell in database
+make clean         # Remove caches and build artifacts
 ```
+
 
 ---
 

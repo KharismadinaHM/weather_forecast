@@ -53,6 +53,12 @@ run:
 daemon:
 	$(VENV)/python -m app.jobs.scheduler --daemon --interval 900
 
+bot:
+	$(VENV)/python -m app.telegram.bot
+
+test-telegram:
+	$(VENV)/python -c "import asyncio; from app.telegram.client import TelegramClient; asyncio.run(TelegramClient().send_message('👋 <b>Test Koneksi Berhasil!</b>\nBot Hong Kong Weather AI siap melayani Anda.'))"
+
 
 clean:
 
