@@ -1,5 +1,7 @@
 .PHONY: help up down logs migrate test lint typecheck shell-db clean install
 
+VENV := .venv/bin
+
 help:
 	@echo "Available commands:"
 	@echo "  make up        - Start database container with Docker Compose"
@@ -22,16 +24,16 @@ logs:
 	docker compose logs -f
 
 migrate:
-	alembic upgrade head
+	$(VENV)/alembic upgrade head
 
 test:
-	pytest -v
+	$(VENV)/pytest -v
 
 lint:
-	ruff check .
+	$(VENV)/ruff check .
 
 typecheck:
-	mypy app/ tests/
+	$(VENV)/mypy app/ tests/
 
 shell-db:
 	docker compose exec db psql -U hkw -d hk_weather
