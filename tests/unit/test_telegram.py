@@ -93,10 +93,12 @@ def test_telegram_formatter_alerts() -> None:
 @pytest.mark.asyncio
 async def test_telegram_client_unconfigured_graceful_fallback() -> None:
     """Verify TelegramClient handles unconfigured credentials safely without crashing."""
-    client = TelegramClient(bot_token=None, chat_id=None)
+    # Use empty strings (not None) so client doesn't fall back to .env values
+    client = TelegramClient(bot_token="", chat_id="")
     assert client.is_configured is False
     res = await client.send_message("Test message")
     assert res is False
+
 
 
 @pytest.mark.asyncio

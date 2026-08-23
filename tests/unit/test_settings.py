@@ -14,6 +14,7 @@ def test_settings_default_values() -> None:
         POSTGRES_USER="test_user",
         POSTGRES_PASSWORD="test_password",
         POSTGRES_DB="test_db",
+        POSTGRES_PORT=5432,
         DATABASE_URL=None,
     )
     assert settings.ENVIRONMENT == "development"
