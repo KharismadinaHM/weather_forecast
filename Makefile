@@ -41,5 +41,9 @@ shell-db:
 install:
 	pip install -e ".[dev]"
 
+dashboard:
+	$(VENV)/streamlit run app/dashboard/main.py
+
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache build dist *.egg-info
+

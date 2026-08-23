@@ -22,7 +22,9 @@ dependencies = [
     "scipy>=1.12.0",
     "python-dotenv>=1.0.1",
     "structlog>=24.1.0",
+    "streamlit>=1.35.0",
 ]
+
 
 [project.optional-dependencies]
 dev = [
@@ -60,8 +62,9 @@ no_implicit_reexport = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pandas", "pandas.*", "sklearn.*", "lightgbm.*", "scipy.*"]
+module = ["pandas", "pandas.*", "sklearn.*", "lightgbm.*", "scipy.*", "streamlit", "streamlit.*"]
 ignore_missing_imports = true
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
