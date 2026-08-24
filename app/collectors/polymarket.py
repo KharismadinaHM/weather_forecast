@@ -1,6 +1,7 @@
 """Polymarket prediction market discovery, schema parsing, and price ingestion pipeline."""
 
 import json
+import re
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -239,9 +240,41 @@ class PolymarketCollector:
         if not raw_outcomes or not isinstance(raw_outcomes, list):
             raise DataQualityError(f"Market {market_id} has no valid outcomes defined")
 
-        # Parse buckets using Section 9.1 BucketParser
-        parsed_buckets = BucketParser.parse_bucket_schema([str(o) for o in raw_outcomes])
-        outcome_bucket_schema = [b.to_dict() for b in parsed_buckets]
+        # Check if outcomes is binary ["Yes", "No"] (Polymarket NegRisk market for specific temperature bucket)
+        is_binary_yes_no = (
+            len(raw_outcomes) == 2
+            and str(raw_outcomes[0]).strip().lower() == "yes"
+            and str(raw_outcomes[1]).strip().lower() == "no"
+        )
+
+        if is_binary_yes_no:
+            bucket_label = (
+                raw_market.get("groupItemTitle")
+                or raw_market.get("title")
+                or ""
+            ).strip()
+
+            if not bucket_label:
+                # Try to extract temperature phrase from question or slug
+                m_temp = re.search(
+                    r"(\d+(?:\.\d+)?\s*(?:°?C|degrees?)?(?:\s*(?:or\s+(?:higher|above|more|greater|below|lower|less|under))|\+)?|(?:<=|<|>=|>|under|below|above|over)\s*\d+(?:\.\d+)?\s*(?:°?C|degrees?)?)",
+                    f"{question} {slug}",
+                    re.IGNORECASE,
+                )
+                if m_temp:
+                    bucket_label = m_temp.group(1).strip()
+                else:
+                    raise DataQualityError(
+                        f"Binary market {market_id} has no groupItemTitle and temperature bucket could not be extracted from question '{question}'"
+                    )
+
+            parsed_bucket = BucketParser.parse_bucket(bucket_label)
+            parsed_buckets = [parsed_bucket]
+            outcome_bucket_schema = [parsed_bucket.to_dict()]
+        else:
+            # Parse multi-outcome discrete buckets using Section 9.1 BucketParser
+            parsed_buckets = BucketParser.parse_bucket_schema([str(o) for o in raw_outcomes])
+            outcome_bucket_schema = [b.to_dict() for b in parsed_buckets]
 
         market = PolymarketMarket(
             market_id=market_id,
@@ -276,7 +309,7 @@ class PolymarketCollector:
             )
             outcomes.append(outcome_obj)
 
-            # Check price if available in outcomePrices
+            # Check price if available in outcomePrices (for binary market, outcomePrices[0] is Yes price)
             if idx < len(raw_outcome_prices):
                 try:
                     price_val = float(raw_outcome_prices[idx])
