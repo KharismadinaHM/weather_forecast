@@ -177,11 +177,12 @@ def seed_demo_data(session: Session) -> None:
                 )
                 session.add(paper)
 
-    # 3. Create Lowest Temperature Markets for Today and Tomorrow
+    # 3. Create Lowest Temperature Markets (Past resolved + Today Active + Tomorrow)
     low_bucket_schemas = ["<=26°C", "27°C", "28°C", ">=29°C"]
-    for m_idx in range(0, 2):
+    for m_idx in range(-3, 2):
         target_d = today + timedelta(days=m_idx)
         market_id = f"poly_hk_low_{target_d.strftime('%Y%m%d')}"
+        is_past = m_idx < 0
 
         existing_mkt = session.get(PolymarketMarket, market_id)
         if not existing_mkt:
@@ -192,7 +193,7 @@ def seed_demo_data(session: Session) -> None:
                 question=f"Lowest temperature in Hong Kong on {target_d.strftime('%B %d, %Y')}?",
                 market_type="temperature_low",
                 target_date=target_d,
-                status="active",
+                status="closed" if is_past else "active",
                 outcome_bucket_schema=low_bucket_schemas,
                 resolution_source_raw="https://www.hko.gov.hk - HKO Daily Extract",
             )
@@ -226,14 +227,17 @@ def seed_demo_data(session: Session) -> None:
                 session.flush()
 
             base_price = 0.25 + (0.20 if b_label == "27°C" else -0.05)
-            session.add(
-                PolymarketPrice(
-                    market_id=market_id,
-                    token_id=token_id,
-                    timestamp=now - timedelta(hours=1),
-                    price=round(base_price, 3),
+            for h_offset in range(12, 0, -1):
+                p_ts = now - timedelta(hours=h_offset) + timedelta(days=m_idx)
+                p_val = max(0.02, min(0.95, base_price + random.uniform(-0.04, 0.05)))
+                session.add(
+                    PolymarketPrice(
+                        market_id=market_id,
+                        token_id=token_id,
+                        timestamp=p_ts,
+                        price=round(p_val, 3),
+                    )
                 )
-            )
 
             model_p = 0.20 + (0.35 if b_label == "27°C" else 0.05) + random.uniform(-0.02, 0.03)
             mkt_p = base_price
@@ -266,6 +270,27 @@ def seed_demo_data(session: Session) -> None:
                 created_at=pred.prediction_timestamp,
             )
             session.add(sig)
+            session.flush()
+
+            if is_buy:
+                trade_won = b_label == "27°C"
+                shares = 1.0 / max(0.01, mkt_p + 0.005)
+                pnl_val = (shares * 1.0 - 1.01) if trade_won else -1.01
+
+                paper = PaperTrade(
+                    signal_id=sig.id,
+                    entry_price=round(mkt_p, 3),
+                    position_size=1.0,
+                    fees=0.005,
+                    slippage=0.005,
+                    pnl=round(pnl_val, 2) if is_past else None,
+                    status="CLOSED" if is_past else "OPEN",
+                    opened_at=pred.prediction_timestamp,
+                    closed_at=(pred.prediction_timestamp + timedelta(hours=18))
+                    if is_past
+                    else None,
+                )
+                session.add(paper)
 
     session.commit()
     logger.info("Demo data generation successfully completed")

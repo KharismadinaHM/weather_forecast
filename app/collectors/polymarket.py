@@ -391,6 +391,7 @@ class PolymarketCollector:
                     markets_count += 1
                 else:
                     existing_mkt.status = market.status
+                    existing_mkt.market_type = market.market_type
                     existing_mkt.outcome_bucket_schema = market.outcome_bucket_schema
                     existing_mkt.resolution_source_raw = (
                         market.resolution_source_raw or existing_mkt.resolution_source_raw

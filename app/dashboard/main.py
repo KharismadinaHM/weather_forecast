@@ -306,12 +306,14 @@ try:
                 search_q = st.text_input("Search Market / Outcome:", "")
 
             filtered_df = pred_df.copy()
-            if "market_type" in filtered_df.columns:
-                filtered_df["type"] = filtered_df["market_type"].apply(
-                    lambda t: "❄️ Min Temp" if t == "temperature_low" else "🔥 Max Temp"
-                )
-            else:
-                filtered_df["type"] = "🔥 Max Temp"
+            filtered_df["type"] = filtered_df.apply(
+                lambda r: "❄️ Min Temp"
+                if str(r.get("market_type") or "").lower() == "temperature_low"
+                or "lowest" in str(r.get("market", "")).lower()
+                or "min" in str(r.get("market", "")).lower()
+                else "🔥 Max Temp",
+                axis=1,
+            )
 
             if type_filter == "🔥 Highest Temp":
                 filtered_df = filtered_df[filtered_df["type"] == "🔥 Max Temp"]
@@ -406,9 +408,9 @@ try:
         m_c1, m_c2, m_c3, m_c4 = st.columns(4)
 
         total_trades = len(trades_df)
-        closed_trades = trades_df[trades_df["status"] == "CLOSED"]
+        closed_trades = trades_df[trades_df["status"] == "CLOSED"] if not trades_df.empty else pd.DataFrame()
         total_pnl = float(closed_trades["pnl"].sum()) if not closed_trades.empty else 0.0
-        win_count = len(closed_trades[closed_trades["pnl"] > 0])
+        win_count = len(closed_trades[closed_trades["pnl"] > 0]) if not closed_trades.empty else 0
         win_rate = (win_count / len(closed_trades) * 100.0) if len(closed_trades) > 0 else 0.0
 
         with m_c1:
@@ -426,11 +428,58 @@ try:
         else:
             st.caption("Cumulative PnL chart will appear once resolved paper trades are available.")
 
-        # Trades Table
+        # Trades Table with Dual-Market Filters
         st.write("#### Trade Execution Log")
         if not trades_df.empty:
+            trades_display_df = trades_df.copy()
+            trades_display_df["type"] = trades_display_df.apply(
+                lambda r: "❄️ Min Temp"
+                if str(r.get("market_type") or "").lower() == "temperature_low"
+                or "lowest" in str(r.get("market", "")).lower()
+                or "min" in str(r.get("market", "")).lower()
+                else "🔥 Max Temp",
+                axis=1,
+            )
+
+            p_col1, p_col2 = st.columns([2, 2])
+            with p_col1:
+                p_type_filter = st.selectbox(
+                    "Filter Trades by Type:", ["ALL", "🔥 Highest Temp", "❄️ Lowest Temp"], key="p_type_filter"
+                )
+            with p_col2:
+                p_status_filter = st.selectbox(
+                    "Filter by Status:", ["ALL", "CLOSED", "OPEN"], key="p_status_filter"
+                )
+
+            if p_type_filter == "🔥 Highest Temp":
+                trades_display_df = trades_display_df[trades_display_df["type"] == "🔥 Max Temp"]
+            elif p_type_filter == "❄️ Lowest Temp":
+                trades_display_df = trades_display_df[trades_display_df["type"] == "❄️ Min Temp"]
+
+            if p_status_filter != "ALL":
+                trades_display_df = trades_display_df[trades_display_df["status"] == p_status_filter]
+
+            cols_order = [
+                c
+                for c in [
+                    "opened_at",
+                    "type",
+                    "market",
+                    "target_date",
+                    "outcome",
+                    "decision",
+                    "entry_price",
+                    "position_size",
+                    "fees",
+                    "slippage",
+                    "pnl",
+                    "status",
+                ]
+                if c in trades_display_df.columns
+            ]
+
             st.dataframe(
-                trades_df.style.format(
+                trades_display_df[cols_order].style.format(
                     {
                         "entry_price": "${:.3f}",
                         "position_size": "${:.2f}",

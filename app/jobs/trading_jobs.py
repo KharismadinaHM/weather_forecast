@@ -12,7 +12,7 @@ from app.logging_config import get_logger
 from app.ml.distribution import ContinuousToBucketMapper
 from app.ml.models import WeatherMLModel
 from app.storage.db import get_db_session
-from app.storage.models import PolymarketMarket, Prediction
+from app.storage.models import PaperTrade, PolymarketMarket, Prediction
 from app.telegram.client import TelegramClient
 from app.telegram.formatter import TelegramFormatter
 from app.trading.edge import EdgeEngine
@@ -80,6 +80,23 @@ def run_prediction_and_signals_job(
 
                 buy_signals = [(p, s) for p, s in results if s.decision == "BUY"]
                 for pred, sig in buy_signals:
+                    # Record forward paper trade if not already tracked
+                    existing_trade = sess.scalars(
+                        select(PaperTrade).where(PaperTrade.signal_id == sig.id)
+                    ).first()
+                    if not existing_trade:
+                        paper_trade = PaperTrade(
+                            signal_id=sig.id,
+                            entry_price=pred.market_probability,
+                            position_size=sig.recommended_size or 1.0,
+                            fees=0.005,
+                            slippage=0.005,
+                            status="OPEN",
+                            opened_at=datetime.now(UTC),
+                        )
+                        sess.add(paper_trade)
+                        sess.flush()
+
                     opp_eval = s_generator.edge_engine.evaluate_outcome(
                         outcome_label=pred.outcome,
                         model_prob=pred.model_probability,
