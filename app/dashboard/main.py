@@ -4,6 +4,7 @@ import streamlit as st
 
 from app.dashboard.queries import (
     evaluate_section35_gates_from_db,
+    get_active_markets_list,
     get_diurnal_timing_insight,
     get_freshness_metrics,
     get_latest_predictions_df,
@@ -256,13 +257,29 @@ try:
         st.subheader("4. 🎯 Latest Predictions & Signals")
         if not pred_df.empty:
             # Filter bar
-            f_col1, f_col2 = st.columns([2, 4])
+            f_col1, f_col2, f_col3 = st.columns([2, 2, 4])
             with f_col1:
-                dec_filter = st.selectbox("Filter by Decision:", ["ALL", "BUY", "HOLD"])
+                type_filter = st.selectbox(
+                    "Market Type:", ["ALL", "🔥 Highest Temp", "❄️ Lowest Temp"]
+                )
             with f_col2:
+                dec_filter = st.selectbox("Decision:", ["ALL", "BUY", "HOLD"])
+            with f_col3:
                 search_q = st.text_input("Search Market / Outcome:", "")
 
             filtered_df = pred_df.copy()
+            if "market_type" in filtered_df.columns:
+                filtered_df["type"] = filtered_df["market_type"].apply(
+                    lambda t: "❄️ Min Temp" if t == "temperature_low" else "🔥 Max Temp"
+                )
+            else:
+                filtered_df["type"] = "🔥 Max Temp"
+
+            if type_filter == "🔥 Highest Temp":
+                filtered_df = filtered_df[filtered_df["type"] == "🔥 Max Temp"]
+            elif type_filter == "❄️ Lowest Temp":
+                filtered_df = filtered_df[filtered_df["type"] == "❄️ Min Temp"]
+
             if dec_filter != "ALL":
                 filtered_df = filtered_df[filtered_df["decision"] == dec_filter]
             if search_q:
@@ -271,8 +288,27 @@ try:
                     | filtered_df["outcome"].str.contains(search_q, case=False, na=False)
                 ]
 
+            display_cols = [
+                c
+                for c in [
+                    "timestamp",
+                    "type",
+                    "market",
+                    "target_date",
+                    "outcome",
+                    "model_prob",
+                    "market_prob",
+                    "edge",
+                    "expected_value",
+                    "decision",
+                    "recommended_size",
+                    "model_version",
+                ]
+                if c in filtered_df.columns
+            ]
+
             st.dataframe(
-                filtered_df.style.format(
+                filtered_df[display_cols].style.format(
                     {
                         "model_prob": "{:.3f}",
                         "market_prob": "{:.3f}",
@@ -297,7 +333,18 @@ try:
         # 5. Polymarket Price vs Model Probability Chart
         # ---------------------------------------------------------
         st.subheader("5. 📈 Polymarket Price vs Model Probability")
-        ts_df = get_market_price_vs_model_df(session)
+        markets_list = get_active_markets_list(session)
+        if markets_list:
+            m_options = {
+                f"{'🔥' if m['market_type'] == 'temperature_high' else '❄️'} {m['question']} ({m['target_date']})": m["market_id"]
+                for m in markets_list
+            }
+            selected_market_label = st.selectbox("Select Market:", list(m_options.keys()))
+            selected_market_id = m_options[selected_market_label]
+            ts_df = get_market_price_vs_model_df(session, market_id=selected_market_id)
+        else:
+            ts_df = get_market_price_vs_model_df(session)
+
         if not ts_df.empty:
             outcomes_list = list(ts_df["outcome"].unique())
             selected_outcome = st.selectbox("Select Outcome Bucket:", outcomes_list)

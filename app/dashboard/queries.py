@@ -106,6 +106,8 @@ def get_latest_predictions_df(session: Session, limit: int = 100) -> pd.DataFram
     stmt = (
         select(
             Prediction.prediction_timestamp.label("timestamp"),
+            PolymarketMarket.market_id.label("market_id"),
+            PolymarketMarket.market_type.label("market_type"),
             PolymarketMarket.question.label("market"),
             PolymarketMarket.target_date.label("target_date"),
             Prediction.outcome.label("outcome"),
@@ -129,6 +131,8 @@ def get_latest_predictions_df(session: Session, limit: int = 100) -> pd.DataFram
         return pd.DataFrame(
             columns=[
                 "timestamp",
+                "market_id",
+                "market_type",
                 "market",
                 "target_date",
                 "outcome",
@@ -145,6 +149,22 @@ def get_latest_predictions_df(session: Session, limit: int = 100) -> pd.DataFram
 
     data = [dict(r._mapping) for r in rows]
     return pd.DataFrame(data)
+
+
+def get_active_markets_list(session: Session) -> list[dict[str, Any]]:
+    """Retrieve list of distinct tracked markets for dropdown selection."""
+    markets = session.scalars(
+        select(PolymarketMarket).order_by(desc(PolymarketMarket.created_at)).limit(30)
+    ).all()
+    return [
+        {
+            "market_id": m.market_id,
+            "question": m.question,
+            "market_type": m.market_type,
+            "target_date": m.target_date.isoformat(),
+        }
+        for m in markets
+    ]
 
 
 def get_market_price_vs_model_df(session: Session, market_id: str | None = None) -> pd.DataFrame:
