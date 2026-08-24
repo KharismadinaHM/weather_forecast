@@ -9,6 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hkw_prod_secret_pass}
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
+      - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - ./backups:/backups
     ports:
       - "127.0.0.1:5432:5432"
@@ -17,6 +18,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hk_weather_migrate_prod
+    restart: "no"
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hkw}:${POSTGRES_PASSWORD:-hkw_prod_secret_pass}@postgres:5432/${POSTGRES_DB:-hk_weather}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-hk_weather}
+      POSTGRES_USER: ${POSTGRES_USER:-hkw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hkw_prod_secret_pass}
 
   agent:
     build:
@@ -27,6 +47,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       ENVIRONMENT: production
       LOG_LEVEL: INFO
@@ -57,6 +79,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       ENVIRONMENT: production
       LOG_LEVEL: INFO
