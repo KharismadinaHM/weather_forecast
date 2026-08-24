@@ -55,38 +55,85 @@ class PolymarketCollector:
 
     def discover_hk_weather_events(self, active_only: bool = True) -> list[dict[str, Any]]:
         """Query Gamma API dynamically for Hong Kong weather related events."""
-        params: dict[str, Any] = {
-            "limit": 100,
-        }
+        matched_events: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        # 1. Query by series_slug (Hong Kong Daily Weather series)
+        series_params: dict[str, Any] = {"series_slug": "hong-kong-daily-weather"}
+        if active_only:
+            series_params["closed"] = "false"
+        try:
+            series_data = self._fetch_gamma("events", params=series_params)
+            if isinstance(series_data, list):
+                for event in series_data:
+                    e_id = str(event.get("id"))
+                    if e_id not in seen_ids:
+                        seen_ids.add(e_id)
+                        matched_events.append(event)
+        except Exception as exc:
+            logger.warning("Error fetching series_slug events", error=str(exc))
+
+        # 2. Query by tag_slug (hong-kong)
+        tag_params: dict[str, Any] = {"tag_slug": "hong-kong"}
+        if active_only:
+            tag_params["closed"] = "false"
+        try:
+            tag_data = self._fetch_gamma("events", params=tag_params)
+            if isinstance(tag_data, list):
+                for event in tag_data:
+                    e_id = str(event.get("id"))
+                    if e_id not in seen_ids:
+                        title = str(event.get("title", "")).lower()
+                        desc = str(event.get("description", "")).lower()
+                        slug = str(event.get("slug", "")).lower()
+                        is_weather = (
+                            "temperature" in title
+                            or "temperature" in desc
+                            or "weather" in title
+                            or "weather" in desc
+                            or "degrees" in desc
+                            or "daily-weather" in slug
+                        )
+                        if is_weather:
+                            seen_ids.add(e_id)
+                            matched_events.append(event)
+        except Exception as exc:
+            logger.warning("Error fetching tag_slug events", error=str(exc))
+
+        # 3. Fallback general query with HK keywords
+        params: dict[str, Any] = {"limit": 100}
         if active_only:
             params["closed"] = "false"
+        try:
+            data = self._fetch_gamma("events", params=params)
+            if isinstance(data, list):
+                for event in data:
+                    e_id = str(event.get("id"))
+                    if e_id in seen_ids:
+                        continue
+                    title = str(event.get("title", "")).lower()
+                    desc = str(event.get("description", "")).lower()
+                    slug = str(event.get("slug", "")).lower()
 
-        # Search events with "Hong Kong" or weather tags
-        data = self._fetch_gamma("events", params=params)
-        if not isinstance(data, list):
-            logger.warning("Unexpected response format from Gamma events endpoint", type=type(data))
-            return []
+                    is_hk = (
+                        "hong kong" in title
+                        or "hong kong" in desc
+                        or "hong-kong" in slug
+                        or "hko" in desc
+                    )
+                    is_weather = (
+                        "temperature" in title
+                        or "temperature" in desc
+                        or "weather" in title
+                        or "weather" in desc
+                        or "degrees" in desc
+                    )
 
-        matched_events: list[dict[str, Any]] = []
-        for event in data:
-            title = str(event.get("title", "")).lower()
-            desc = str(event.get("description", "")).lower()
-            slug = str(event.get("slug", "")).lower()
-
-            # Check if event is about Hong Kong weather / temperature
-            is_hk = (
-                "hong kong" in title or "hong kong" in desc or "hong-kong" in slug or "hko" in desc
-            )
-            is_weather = (
-                "temperature" in title
-                or "temperature" in desc
-                or "weather" in title
-                or "weather" in desc
-                or "degrees" in desc
-            )
-
-            if is_hk and is_weather:
-                matched_events.append(event)
+                    if is_hk and is_weather:
+                        seen_ids.add(e_id)
+                        matched_events.append(event)
+        except Exception as exc:
+            logger.warning("Error fetching fallback events", error=str(exc))
 
         logger.info("Discovered Hong Kong weather events", count=len(matched_events))
         return matched_events
