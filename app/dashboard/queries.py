@@ -351,77 +351,110 @@ def evaluate_section35_gates_from_db(session: Session) -> QuantitativeGateResult
 
 
 def get_diurnal_timing_insight(session: Session) -> dict[str, Any]:
-    """Calculate tactical diurnal peak timing and recommended entry window (WIB vs HKT)."""
+    """Calculate tactical diurnal peak and minimum timing and recommended entry windows (WIB vs HKT)."""
     now = datetime.now(UTC)
     today_hkt = (now + timedelta(hours=8)).date()
 
-    # 1. Find most relevant market (today or active upcoming)
-    active_mkt = session.scalars(
+    # 1. Highest Temperature Market (Active or latest)
+    high_mkt = session.scalars(
         select(PolymarketMarket)
-        .where(PolymarketMarket.status == "active")
-        .order_by(PolymarketMarket.target_date)
+        .where(PolymarketMarket.market_type != "temperature_low")
+        .order_by(desc(PolymarketMarket.status == "active"), PolymarketMarket.target_date.asc())
         .limit(1)
     ).first()
 
-    if not active_mkt:
-        active_mkt = session.scalars(
-            select(PolymarketMarket).order_by(desc(PolymarketMarket.created_at)).limit(1)
-        ).first()
+    # 2. Lowest Temperature Market (Active or latest)
+    low_mkt = session.scalars(
+        select(PolymarketMarket)
+        .where(PolymarketMarket.market_type == "temperature_low")
+        .order_by(desc(PolymarketMarket.status == "active"), PolymarketMarket.target_date.asc())
+        .limit(1)
+    ).first()
 
-    target_d = active_mkt.target_date if active_mkt else (today_hkt + timedelta(days=1))
+    ref_mkt = high_mkt or low_mkt
+    target_d = ref_mkt.target_date if ref_mkt else (today_hkt + timedelta(days=1))
     target_date_str = target_d.strftime("%d %B %Y")
 
-    # 2. Peak Diurnal Temperature Time in Hong Kong
-    # Meteorologically in HK, maximum daily temperature occurs between 13:30 - 14:30 HKT
-    peak_hkt_hour = "14:00"
-    peak_wib_hour = "13:00"  # WIB = HKT - 1 hour
+    # High Temp Timing (Peak sunlight: 13:30 - 14:30 HKT / 12:30 - 13:30 WIB)
+    high_peak_hkt = "14:00 HKT"
+    high_peak_wib = "13:00 WIB"
+    high_entry_hkt = "09:00 - 10:00 HKT"
+    high_entry_wib = "08:00 - 09:00 WIB"
 
-    # 3. Recommended Entry Window
-    # Liquidity & pricing edge optimal in morning (09:00 - 10:00 HKT / 08:00 - 09:00 WIB)
-    entry_hkt_window = "09:00 - 10:00 HKT"
-    entry_wib_window = "08:00 - 09:00 WIB"
+    high_rec_outcome = "32°C"
+    high_rec_prob = 0.40
+    high_rec_price = 0.28
+    high_rec_edge = 0.12
+    high_decision = "BUY"
 
-    # 4. Find Best Prediction / Signal recommendation
-    rec_outcome = "32°C"
-    rec_prob = 0.40
-    rec_price = 0.28
-    rec_edge = 0.12
-    rec_decision = "BUY"
-
-    if active_mkt:
-        # Check predictions for this market
+    if high_mkt:
         preds = session.scalars(
             select(Prediction)
-            .where(Prediction.market_id == active_mkt.market_id)
+            .where(Prediction.market_id == high_mkt.market_id)
             .order_by(desc(Prediction.edge))
         ).all()
-
         if preds:
             best_pred = preds[0]
-            rec_outcome = best_pred.outcome
-            rec_prob = float(best_pred.model_probability)
-            rec_price = float(best_pred.market_probability)
-            rec_edge = float(best_pred.edge)
-            rec_decision = "BUY" if rec_edge >= 0.08 else "HOLD"
+            high_rec_outcome = best_pred.outcome
+            high_rec_prob = float(best_pred.model_probability)
+            high_rec_price = float(best_pred.market_probability)
+            high_rec_edge = float(best_pred.edge)
+            high_decision = "BUY" if high_rec_edge >= 0.08 else "HOLD"
 
-    # Formatted Indonesian Insight Sentence requested by user
+    # Low Temp Timing (Minimum radiative cooling: 05:00 - 06:30 HKT / 04:00 - 05:30 WIB)
+    low_peak_hkt = "05:30 HKT"
+    low_peak_wib = "04:30 WIB"
+    low_entry_hkt = "22:00 - 23:00 HKT"
+    low_entry_wib = "21:00 - 22:00 WIB"
+
+    low_rec_outcome = "27°C"
+    low_rec_prob = 0.45
+    low_rec_price = 0.25
+    low_rec_edge = 0.20
+    low_decision = "BUY"
+
+    if low_mkt:
+        preds = session.scalars(
+            select(Prediction)
+            .where(Prediction.market_id == low_mkt.market_id)
+            .order_by(desc(Prediction.edge))
+        ).all()
+        if preds:
+            best_pred = preds[0]
+            low_rec_outcome = best_pred.outcome
+            low_rec_prob = float(best_pred.model_probability)
+            low_rec_price = float(best_pred.market_probability)
+            low_rec_edge = float(best_pred.edge)
+            low_decision = "BUY" if low_rec_edge >= 0.08 else "HOLD"
+
+    # User-requested comprehensive phrasing covering both Highest & Lowest temp
     formatted_msg = (
-        f"Suhu tertinggi di HK pd tgl {target_date_str} biasa terjadi di jam {peak_hkt_hour} "
-        f"waktu setempat ({peak_wib_hour} WIB), baiknya anda {rec_decision.lower()} market "
-        f"pada suhu {rec_outcome} di jam {entry_wib_window}."
+        f"Suhu tertinggi di HK pd tgl {target_date_str} biasa terjadi di jam {high_peak_hkt} ({high_peak_wib}), "
+        f"baiknya anda {high_decision.lower()} market pada suhu {high_rec_outcome} di jam {high_entry_wib}. "
+        f"Sedangkan suhu terendah biasa terjadi di jam {low_peak_hkt} ({low_peak_wib}), "
+        f"baiknya anda {low_decision.lower()} market pada suhu {low_rec_outcome} di jam {low_entry_wib}."
     )
 
     return {
         "target_date": target_d,
         "target_date_str": target_date_str,
-        "peak_hkt": f"{peak_hkt_hour} HKT",
-        "peak_wib": f"{peak_wib_hour} WIB",
-        "recommended_outcome": rec_outcome,
-        "recommended_entry_hkt": entry_hkt_window,
-        "recommended_entry_wib": entry_wib_window,
-        "model_prob": rec_prob,
-        "market_price": rec_price,
-        "edge": rec_edge,
-        "decision": rec_decision,
+        "high_peak_hkt": high_peak_hkt,
+        "high_peak_wib": high_peak_wib,
+        "high_entry_hkt": high_entry_hkt,
+        "high_entry_wib": high_entry_wib,
+        "high_recommended_outcome": high_rec_outcome,
+        "high_model_prob": high_rec_prob,
+        "high_market_price": high_rec_price,
+        "high_edge": high_rec_edge,
+        "high_decision": high_decision,
+        "low_peak_hkt": low_peak_hkt,
+        "low_peak_wib": low_peak_wib,
+        "low_entry_hkt": low_entry_hkt,
+        "low_entry_wib": low_entry_wib,
+        "low_recommended_outcome": low_rec_outcome,
+        "low_model_prob": low_rec_prob,
+        "low_market_price": low_rec_price,
+        "low_edge": low_rec_edge,
+        "low_decision": low_decision,
         "formatted_insight": formatted_msg,
     }

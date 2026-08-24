@@ -59,20 +59,26 @@ class PolymarketCollector:
         matched_events: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
 
-        # 1. Query by series_slug (Hong Kong Daily Weather series)
-        series_params: dict[str, Any] = {"series_slug": "hong-kong-daily-weather"}
-        if active_only:
-            series_params["closed"] = "false"
-        try:
-            series_data = self._fetch_gamma("events", params=series_params)
-            if isinstance(series_data, list):
-                for event in series_data:
-                    e_id = str(event.get("id"))
-                    if e_id not in seen_ids:
-                        seen_ids.add(e_id)
-                        matched_events.append(event)
-        except Exception as exc:
-            logger.warning("Error fetching series_slug events", error=str(exc))
+        # 1. Query by series_slugs (Hong Kong Daily Weather, Lowest Temp, etc.)
+        for s_slug in [
+            "hong-kong-daily-weather",
+            "lowest-temperature-in-hong-kong",
+            "hong-kong-lowest-temperature",
+            "hong-kong-weather",
+        ]:
+            series_params: dict[str, Any] = {"series_slug": s_slug}
+            if active_only:
+                series_params["closed"] = "false"
+            try:
+                series_data = self._fetch_gamma("events", params=series_params)
+                if isinstance(series_data, list):
+                    for event in series_data:
+                        e_id = str(event.get("id"))
+                        if e_id not in seen_ids:
+                            seen_ids.add(e_id)
+                            matched_events.append(event)
+            except Exception as exc:
+                logger.debug("Series query not found", series_slug=s_slug, error=str(exc))
 
         # 2. Query by tag_slug (hong-kong)
         tag_params: dict[str, Any] = {"tag_slug": "hong-kong"}

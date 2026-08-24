@@ -69,6 +69,7 @@ def seed_demo_data(session: Session) -> None:
                 event_id=f"evt_hk_{target_d.strftime('%Y%m%d')}",
                 slug=f"highest-temperature-hong-kong-{target_d.strftime('%B-%d-%Y').lower()}",
                 question=f"Highest temperature in Hong Kong on {target_d.strftime('%B %d, %Y')}?",
+                market_type="temperature_high",
                 target_date=target_d,
                 status="closed" if is_past else "active",
                 outcome_bucket_schema=bucket_schemas,
@@ -78,6 +79,8 @@ def seed_demo_data(session: Session) -> None:
             session.flush()
         else:
             mkt = existing_mkt
+            mkt.market_type = "temperature_high"
+            session.flush()
 
         # Create outcomes and price time-series
         for idx, b_label in enumerate(bucket_schemas):
@@ -194,6 +197,10 @@ def seed_demo_data(session: Session) -> None:
                 resolution_source_raw="https://www.hko.gov.hk - HKO Daily Extract",
             )
             session.add(mkt)
+            session.flush()
+        else:
+            mkt = existing_mkt
+            mkt.market_type = "temperature_low"
             session.flush()
 
         for idx, b_label in enumerate(low_bucket_schemas):

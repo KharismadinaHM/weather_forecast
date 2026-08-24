@@ -161,13 +161,13 @@ try:
         # ---------------------------------------------------------
         # 2. Tactical Diurnal Peak & Entry Timing Insight
         # ---------------------------------------------------------
-        st.subheader("2. 💡 Tactical Timing & Peak Temperature Insight")
+        st.subheader("2. 💡 Tactical Timing & Peak/Lowest Temperature Insights")
 
         # Featured insight card with highlighted narrative
         st.markdown(
             f"""
             <div class="tactical-box">
-                <div class="tactical-title">🎯 Panduan Waktu Entry & Jam Puncak Suhu</div>
+                <div class="tactical-title">🎯 Panduan Waktu Entry, Suhu Tertinggi & Terendah HK</div>
                 <div class="tactical-text">
                     <b>"{timing_insight["formatted_insight"]}"</b>
                 </div>
@@ -176,41 +176,79 @@ try:
             unsafe_allow_html=True,
         )
 
-        t1, t2, t3, t4 = st.columns(4)
-        with t1:
+        st.markdown("##### 🔥 Rekomendasi Pasar: Suhu Tertinggi (Highest Temp)")
+        h1, h2, h3, h4 = st.columns(4)
+        with h1:
             st.metric(
                 label="Target Date",
                 value=f"{timing_insight['target_date_str']}",
-                delta="Hong Kong Daily",
+                delta="🔥 Highest Temp Market",
             )
-            st.caption("Tanggal pasar prediksi cuaca")
-        with t2:
+            st.caption("Tanggal evaluasi pasar")
+        with h2:
             st.metric(
-                label="Jam Puncak Suhu HK",
-                value=f"{timing_insight['peak_hkt']}",
-                delta=f"≈ {timing_insight['peak_wib']}",
+                label="Jam Puncak Suhu",
+                value=f"{timing_insight['high_peak_hkt']}",
+                delta=f"≈ {timing_insight['high_peak_wib']}",
                 delta_color="normal",
             )
             st.caption("Puncak radiasi matahari harian")
-        with t3:
-            decision_badge = "🟢 BUY" if timing_insight["decision"] == "BUY" else "🟡 HOLD"
+        with h3:
+            h_badge = "🟢 BUY" if timing_insight["high_decision"] == "BUY" else "🟡 HOLD"
             st.metric(
-                label="Rekomendasi Outcome",
-                value=f"{decision_badge} {timing_insight['recommended_outcome']}",
-                delta=f"Edge: {timing_insight['edge']:+.1%}",
+                label="Rekomendasi Max Temp",
+                value=f"{h_badge} {timing_insight['high_recommended_outcome']}",
+                delta=f"Edge: {timing_insight['high_edge']:+.1%}",
             )
             st.caption(
-                f"Model: {timing_insight['model_prob']:.0%} vs Market: "
-                f"{timing_insight['market_price']:.0%}"
+                f"Model: {timing_insight['high_model_prob']:.0%} vs Market: "
+                f"{timing_insight['high_market_price']:.0%}"
             )
-        with t4:
+        with h4:
             st.metric(
                 label="Jam Beli Terbaik (WIB)",
-                value=f"{timing_insight['recommended_entry_wib']}",
-                delta=f"{timing_insight['recommended_entry_hkt']}",
+                value=f"{timing_insight['high_entry_wib']}",
+                delta=f"{timing_insight['high_entry_hkt']}",
                 delta_color="normal",
             )
-            st.caption("Sebelum pergerakan harga menuju puncak")
+            st.caption("Pagi hari sebelum suhu naik")
+
+        st.markdown("##### ❄️ Rekomendasi Pasar: Suhu Terendah (Lowest Temp)")
+        l1, l2, l3, l4 = st.columns(4)
+        with l1:
+            st.metric(
+                label="Target Date",
+                value=f"{timing_insight['target_date_str']}",
+                delta="❄️ Lowest Temp Market",
+            )
+            st.caption("Tanggal evaluasi pasar")
+        with l2:
+            st.metric(
+                label="Jam Titik Terendah",
+                value=f"{timing_insight['low_peak_hkt']}",
+                delta=f"≈ {timing_insight['low_peak_wib']}",
+                delta_color="normal",
+            )
+            st.caption("Pendinginan radiasi subuh")
+        with l3:
+            l_badge = "🟢 BUY" if timing_insight["low_decision"] == "BUY" else "🟡 HOLD"
+            st.metric(
+                label="Rekomendasi Min Temp",
+                value=f"{l_badge} {timing_insight['low_recommended_outcome']}",
+                delta=f"Edge: {timing_insight['low_edge']:+.1%}",
+            )
+            st.caption(
+                f"Model: {timing_insight['low_model_prob']:.0%} vs Market: "
+                f"{timing_insight['low_market_price']:.0%}"
+            )
+        with l4:
+            st.metric(
+                label="Jam Beli Terbaik (WIB)",
+                value=f"{timing_insight['low_entry_wib']}",
+                delta=f"{timing_insight['low_entry_hkt']}",
+                delta_color="normal",
+            )
+            st.caption("Malam hari sebelum pendinginan subuh")
 
         st.markdown("---")
 
