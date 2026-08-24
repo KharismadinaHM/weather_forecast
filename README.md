@@ -1,6 +1,6 @@
 # Hong Kong Weather Prediction Market AI Agent
 
-An end-to-end quantitative trading system that predicts probability distributions of Hong Kong daily maximum temperature, compares against Polymarket prediction market prices, and executes paper trading signals under strict risk controls.
+An end-to-end quantitative trading system that predicts probability distributions of Hong Kong daily **maximum (highest)** and **minimum (lowest)** temperatures, compares against Polymarket prediction market prices in real time, and executes paper trading signals under strict Section 35 quantitative risk controls.
 
 ---
 
@@ -9,15 +9,15 @@ An end-to-end quantitative trading system that predicts probability distribution
 - [x] **M0 — Feasibility Research**: Completed & approved (`docs/feasibility.md`)
 - [x] **M1 — Infrastructure**: Python project scaffolding, Docker Compose, PostgreSQL schema (10 tables), logging & config
 - [x] **M2 — HKO Collector**: Ingestion pipeline for HKO observations & forecasts with data-quality validation
-- [x] **M3 — Polymarket Collector**: Market discovery & temperature bucket schema parser (Section 9.1)
+- [x] **M3 — Polymarket Collector**: Discovery for Highest & Lowest temperature markets & NegRisk/discrete bucket schema parser
 - [x] **M4 — Dataset & Feature Pipeline**: Feature engineering & anti-leakage verification
-- [x] **M5 — Weather ML Model**: Climatology / HKO baseline vs calibrated LightGBM model
+- [x] **M5 — Weather ML Model**: Dual-target calibrated LightGBM model (Max & Min temp distributions)
 - [x] **M6 — Trading Logic**: Edge/EV engine, fee/slippage models & risk controls
 - [x] **M7 — Backtest & Statistical Significance**: Walk-forward validation & Model G control
-- [x] **M8 — Telegram Interface**: Daily notifications & command bot
-- [x] **M9 — Cloud Deployment**: Production Docker stack, backup engine & automated job scheduler
+- [x] **M8 — Telegram Interface**: Interactive command bot (`/health`, `/prediction`, `/market`, `/status`) & daily alert notifications
+- [x] **M9 — Cloud Deployment**: Production Docker stack (`postgres`, `migrate`, `agent`, `bot`, `dashboard`), backup engine & scheduler
 - [x] **M10 — Paper Trading**: Forward position tracker & Section 35 quantitative go/no-go gates
-- [x] **M-Dashboard — Streamlit Monitoring Dashboard**: Live web dashboard for pipeline freshness, Section 35 gates, signals & cumulative PnL
+- [x] **M-Dashboard — Streamlit Monitoring Dashboard**: Live web dashboard for pipeline freshness, Section 35 gates, Max/Min signals & cumulative PnL
 
 ---
 
@@ -26,10 +26,11 @@ An end-to-end quantitative trading system that predicts probability distribution
 1. [Local Development Setup](#local-development-setup-mac--linux--windows)
 2. [Streamlit Monitoring Dashboard (M-Dashboard)](#streamlit-monitoring-dashboard-m-dashboard)
 3. [Google Cloud Platform (GCP) Deployment](#google-cloud-platform-gcp-deployment)
-4. [Running Individual Jobs & Schedulers](#running-individual-jobs)
-5. [Telegram Bot Integration](#telegram-bot-setup)
-6. [Configuration Reference](#configuration-reference)
-7. [Make Commands Reference](#make-commands-reference)
+4. [Development & Feature Update Workflow](#-development--feature-update-workflow)
+5. [Running Individual Jobs & Schedulers](#running-individual-jobs)
+6. [Telegram Bot Integration](#telegram-bot-setup)
+7. [Configuration Reference](#configuration-reference)
+8. [Make Commands Reference](#make-commands-reference)
 
 ---
 
@@ -84,7 +85,7 @@ Open **`http://localhost:8501`** in your web browser.
 
 ### Seeding Demo Data (Optional for Visualization)
 
-If there are currently no active Hong Kong weather markets open on Polymarket today, you can generate realistic simulated markets, predictions, and paper trading records to test the dashboard UI:
+If you want to instantly preview full historical charts, backtests, and dual-market predictions (Highest & Lowest Temp):
 
 ```bash
 # Seed demo prediction markets & paper trade history
@@ -103,13 +104,15 @@ After running, click **🔄 Refresh Data** in the dashboard sidebar.
 ├────────────────────────────────────────────────────────────────────────┤
 │ 1. 📡 Ingestion Pipeline Freshness (HKO, Polymarket, ML Model Status)  │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 2. 🛡️ Section 35 Quantitative Go/No-Go Gates (5 Visual KPIs & Verdict) │
+│ 2. 💡 Tactical Diurnal Peak & Timing Insights (Best Entry Hours WIB)   │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 3. 🎯 Latest Predictions & Signals (Interactive Filterable Table)     │
+│ 3. 🛡️ Section 35 Quantitative Go/No-Go Gates (5 Visual KPIs & Verdict) │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 4. 📈 Polymarket Price vs Model Probability Time-Series Chart          │
+│ 4. 🎯 Latest Predictions & Signals (Filter by Highest/Lowest Temp)    │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 5. 💼 Paper Trading Performance & Cumulative PnL Curve                 │
+│ 5. 📈 Polymarket Price vs Model Probability Chart (Market Selector)    │
+├────────────────────────────────────────────────────────────────────────┤
+│ 6. 💼 Paper Trading Performance & Cumulative PnL Curve                 │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -119,7 +122,11 @@ After running, click **🔄 Refresh Data** in the dashboard sidebar.
 * **Polymarket Markets & Prices**: Tracks when active Polymarket weather contracts and token prices were last synchronized.
 * **ML Predictions**: Displays when the model last generated probability distributions.
 
-#### 2. Section 35 Quantitative Go/No-Go Gates
+#### 2. Tactical Diurnal Peak & Timing Insights
+* Identifies daily peak temperature windows (13:00–15:00 HKT / 12:00–14:00 WIB) and minimum temperature windows (05:00–07:00 HKT / 04:00–06:00 WIB).
+* Highlights the recommended entry window before Polymarket order books adjust.
+
+#### 3. Section 35 Quantitative Go/No-Go Gates
 Evaluates whether the trading system meets the 5 strict numeric gates defined in **PLAN.md Section 35 & 23** before any live experiment:
 * **Gate 1 (Sample Size)**: Minimum $\ge 50$ resolved trades required (`❌ FAILED` if $N < 50$, `✅ PASSED` if $N \ge 50$).
 * **Gate 2 (Positive ROI)**: Net ROI after all execution fees and slippage $> 0\%$.
@@ -128,15 +135,16 @@ Evaluates whether the trading system meets the 5 strict numeric gates defined in
 * **Gate 5 (Weather Baseline)**: ML Model Brier Score $\le$ HKO Official Forecast Brier Score.
 * **Overall Verdict Banner**: `READY_FOR_LIVE_EXPERIMENT`, `CONTINUE_PAPER_TRADING`, or `REJECT_STRATEGY`.
 
-#### 3. Latest Predictions & Trading Signals
-* Displays every evaluated market outcome bucket (e.g. `<=31°C`, `32°C`, `33°C`, `34°C`, `>=35°C`).
-* Columns: `Market Question`, `Target Date`, `Outcome`, `Model Probability`, `Market Price`, `Gross Edge`, `Net EV`, `Decision` (`BUY`/`HOLD`), `Recommended Size`, and `Model Version`.
-* Includes quick filters by decision (`ALL`, `BUY`, `HOLD`) and keyword search.
+#### 4. Latest Predictions & Trading Signals
+* Supports both **Highest Temperature (`🔥 Max Temp`)** and **Lowest Temperature (`❄️ Min Temp`)** markets.
+* Filter by **Market Type** (`ALL`, `🔥 Highest Temp`, `❄️ Lowest Temp`) and **Decision** (`ALL`, `BUY`, `HOLD`).
+* Columns: `Timestamp`, `Type`, `Market Question`, `Target Date`, `Outcome`, `Model Probability`, `Market Price`, `Gross Edge`, `Net EV`, `Decision` (`BUY`/`HOLD`), `Recommended Size`, and `Model Version`.
 
-#### 4. Polymarket Price vs Model Probability Chart
+#### 5. Polymarket Price vs Model Probability Chart
+* Interactive **Market Selector**: Choose any active Highest or Lowest Temperature market to plot.
 * Select any outcome bucket from the dropdown to visualize the historical time-series of Polymarket market prices versus the model's estimated fair probability.
 
-#### 5. Paper Trading Performance & Cumulative PnL
+#### 6. Paper Trading Performance & Cumulative PnL
 * **Key Metrics**: Total Trades, Resolved Trades, Win Rate (%), and Cumulative Net PnL ($).
 * **Cumulative PnL Chart**: Visualizes portfolio growth and drawdown over time.
 * **Trade Log**: Complete table of executed paper orders with entry prices, slippage, fees, status (`OPEN` / `CLOSED`), and realized PnL.
@@ -217,14 +225,25 @@ TELEGRAM_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
 Run using Docker Compose:
 
 ```bash
-# Start PostgreSQL and Agent worker in background
+# Build and start all production services in the background
 docker compose -f docker-compose.prod.yml up -d --build
 
-# Verify running containers
+# Verify running containers (all 4 services should be healthy/running)
 docker compose -f docker-compose.prod.yml ps
+```
 
-# View live real-time logs
+The production stack starts:
+1. **`hk_weather_postgres_prod`**: Production PostgreSQL 16 database with persisted volume.
+2. **`hk_weather_migrate_prod`**: Automatic Alembic schema migration runner.
+3. **`hk_weather_agent_prod`**: Continuous 15-minute scheduler daemon for HKO observations & Polymarket predictions.
+4. **`hk_weather_bot_prod`**: Interactive Telegram command bot listener (`/health`, `/prediction`, `/status`, `/market`).
+5. **`hk_weather_dashboard_prod`**: Streamlit Web Monitoring Dashboard accessible on port `8501`.
+
+```bash
+# View live logs of any service
 docker compose -f docker-compose.prod.yml logs -f agent
+docker compose -f docker-compose.prod.yml logs -f bot
+docker compose -f docker-compose.prod.yml logs -f dashboard
 ```
 
 ---
@@ -247,7 +266,7 @@ chmod +x scripts/backup.sh
 
 ```bash
 # View live logs
-docker compose -f docker-compose.prod.yml logs -f --tail=100 agent
+docker compose -f docker-compose.prod.yml logs -f --tail=100
 
 # Stop all services
 docker compose -f docker-compose.prod.yml down
@@ -274,17 +293,20 @@ How to develop new features using **Antigravity IDE** locally and seamlessly upd
    ```
 
 ### Step 2: Deploy Updates to GCP Server (1-Click Command)
-In your GCP VM terminal (SSH), run the automated zero-downtime deployment script:
+In your GCP VM terminal (SSH), pull the latest update and rebuild containers:
+
 ```bash
 cd weather_forecast
-./scripts/deploy.sh
+git pull origin main
+docker compose -f docker-compose.prod.yml up -d --build
 ```
+*(Or simply run `./scripts/deploy.sh`)*
 
-**What `./scripts/deploy.sh` automatically does:**
-1. Pulls the latest code from GitHub (`git pull origin main`).
-2. Runs database migrations automatically if new tables or columns were added (`alembic upgrade head`).
+**What the update automatically does:**
+1. Pulls the latest code from GitHub.
+2. Runs database migrations automatically if new tables or columns were added.
 3. Rebuilds and restarts the container stack with zero manual configuration.
-4. Performs a health check to verify everything is running smoothly.
+4. Preserves all historical database records in Docker volume (`postgres_prod_data`).
 
 > 🛡️ **Data Safety Guarantee**: All database records (historical observations, predictions, paper trades, PnL) are preserved across updates because PostgreSQL stores its data in the isolated Docker volume (`postgres_prod_data`).
 
