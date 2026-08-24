@@ -185,7 +185,8 @@ def test_backtest_engine_model_f_and_model_g() -> None:
     model = WeatherMLModel(n_estimators=30, learning_rate=0.1)
     model.fit(pd.DataFrame(rows), pd.Series(y_vals))
 
-    # Create 5 historical market contexts
+    # Create 5 historical market contexts with market prices that create
+    # clear mispricing opportunities for the model to detect
     buckets = BucketParser.parse_bucket_schema(["<=30°C", "31°C", "32°C", ">=33°C"])
     contexts = []
     f_rows = []
@@ -197,13 +198,17 @@ def test_backtest_engine_model_f_and_model_g() -> None:
                 target_date=t_date,
                 decision_timestamp=datetime(2026, 8, 9 + i, 16, 0, tzinfo=UTC),
                 buckets=buckets,
-                outcome_prices={"<=30°C": 0.15, "31°C": 0.20, "32°C": 0.30, ">=33°C": 0.35},
+                outcome_prices={"<=30°C": 0.25, "31°C": 0.25, "32°C": 0.20, ">=33°C": 0.30},
                 actual_max_temp=32.2,  # 32°C wins!
             )
         )
         f_rows.append(rows[0])
 
-    engine = BacktestEngine()
+    # Use explicit edge engine with test-specific thresholds to decouple
+    # from production threshold changes
+    from app.trading.edge import EdgeEngine
+
+    engine = BacktestEngine(edge_engine=EdgeEngine(min_edge=0.08, min_net_ev=0.05))
     trades_f, trades_g, rep_f, rep_g = engine.run_backtest_on_contexts(contexts, model, f_rows)
 
     assert len(trades_f) > 0

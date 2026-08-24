@@ -12,6 +12,11 @@ from app.collectors.validators import DataQualityError
 class ContinuousToBucketMapper:
     """Integrates continuous probability density over Polymarket bucket schemas."""
 
+    # Minimum allowed standard deviation to prevent overly narrow distributions
+    # that generate false positive edge signals. HK temperature has natural
+    # variability of ~1.5-2.5°C even within well-forecast regimes.
+    MIN_STD_FLOOR: float = 1.2
+
     @classmethod
     def calculate_bucket_probability(
         cls,
@@ -28,8 +33,8 @@ class ContinuousToBucketMapper:
         - range (A - B): [A - continuity_correction, B + continuity_correction)
         - single degree (X): [X - continuity_correction, X + continuity_correction)
         """
-        if std <= 0.0:
-            std = 1e-4
+        if std < cls.MIN_STD_FLOOR:
+            std = cls.MIN_STD_FLOOR
 
         if bucket.is_open_lower:
             # P(Temp <= high + 0.5)

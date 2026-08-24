@@ -4,6 +4,7 @@ import streamlit as st
 
 from app.dashboard.queries import (
     evaluate_section35_gates_from_db,
+    get_3day_forecast,
     get_active_markets_list,
     get_diurnal_timing_insight,
     get_freshness_metrics,
@@ -84,6 +85,7 @@ try:
         trades_df, pnl_df = get_paper_trades_and_pnl_df(session)
         gate_res = evaluate_section35_gates_from_db(session)
         timing_insight = get_diurnal_timing_insight(session)
+        forecast_3day = get_3day_forecast(session)
 
         # ---------------------------------------------------------
         # 1. Freshness & Data Pipeline Status
@@ -176,6 +178,54 @@ try:
             unsafe_allow_html=True,
         )
 
+        # HKO Forecast & Model Estimate Reference Row
+        ref1, ref2, ref3 = st.columns(3)
+        with ref1:
+            hko_max_str = (
+                f"{timing_insight['hko_forecast_max_temp']:.0f}°C"
+                if timing_insight.get("hko_forecast_max_temp") is not None
+                else "N/A"
+            )
+            hko_min_str = (
+                f"{timing_insight['hko_forecast_min_temp']:.0f}°C"
+                if timing_insight.get("hko_forecast_min_temp") is not None
+                else "N/A"
+            )
+            st.metric(
+                label="🌤️ HKO Forecast (Resmi)",
+                value=f"Max {hko_max_str} / Min {hko_min_str}",
+                delta="Referensi forecast HKO 9-Day",
+                delta_color="off",
+            )
+        with ref2:
+            st.metric(
+                label="🤖 Model Estimate",
+                value=(
+                    f"Max {timing_insight['high_model_temp_estimate']:.0f}°C / "
+                    f"Min {timing_insight['low_model_temp_estimate']:.0f}°C"
+                ),
+                delta="Estimasi suhu model ML",
+                delta_color="off",
+            )
+        with ref3:
+            cur_temp_str = (
+                f"{timing_insight['current_temp']:.1f}°C"
+                if timing_insight.get("current_temp") is not None
+                else "N/A"
+            )
+            st.metric(
+                label="🌡️ Suhu Saat Ini (HKO)",
+                value=cur_temp_str,
+                delta="Observasi terkini stasiun HKO",
+                delta_color="off",
+            )
+
+        # Deviation warnings
+        if timing_insight.get("high_deviation_warning"):
+            st.warning(timing_insight["high_deviation_warning"])
+        if timing_insight.get("low_deviation_warning"):
+            st.warning(timing_insight["low_deviation_warning"])
+
         st.markdown("##### 🔥 Rekomendasi Pasar: Suhu Tertinggi (Highest Temp)")
         h1, h2, h3, h4 = st.columns(4)
         with h1:
@@ -253,9 +303,125 @@ try:
         st.markdown("---")
 
         # ---------------------------------------------------------
-        # 3. Section 35 Quantitative Go/No-Go Gates
+        # 3. Prediksi Suhu 3 Hari ke Depan
         # ---------------------------------------------------------
-        st.subheader("3. 🛡️ Section 35 Quantitative Go/No-Go Gates")
+        st.subheader("3. 🌤️ Prediksi Suhu HK — 3 Hari ke Depan")
+        st.caption("Sumber: HKO 9-Day Forecast (resmi) · Model ML · Data Observasi Aktual")
+
+        day_cols = st.columns(3)
+        weather_icons = {
+            "sunny": "☀️",
+            "cloudy": "⛅",
+            "rain": "🌧️",
+            "thunder": "⛈️",
+            "fine": "🌞",
+        }
+
+        for col, day in zip(day_cols, forecast_3day):
+            with col:
+                # Determine rain icon
+                rain_p = day["hko_rain_prob"]
+                if rain_p is not None:
+                    if rain_p >= 0.7:
+                        w_icon = "🌧️"
+                    elif rain_p >= 0.4:
+                        w_icon = "⛅"
+                    else:
+                        w_icon = "☀️"
+                else:
+                    w_icon = "🌤️"
+
+                # Day header card
+                day_color = "#1e3c72" if day["day_offset"] == 0 else "#1a2a4a"
+                border_color = "#00e676" if day["day_offset"] == 0 else "#2196f3" if day["day_offset"] == 1 else "#9c27b0"
+
+                st.markdown(
+                    f"""
+                    <div style="
+                        background: linear-gradient(135deg, {day_color} 0%, #2a5298 100%);
+                        border-radius: 12px;
+                        padding: 16px 18px;
+                        color: white;
+                        margin-bottom: 10px;
+                        border-left: 5px solid {border_color};
+                    ">
+                        <div style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 4px;">
+                            {day['weekday']} · {day['target_date_str']}
+                        </div>
+                        <div style="font-size: 1.3rem; font-weight: bold; margin-bottom: 2px;">
+                            {w_icon} {day['day_label']}
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                # Temperature range from HKO
+                if day["has_hko_forecast"]:
+                    hko_max_str = f"{day['hko_max']:.0f}°C" if day["hko_max"] is not None else "—"
+                    hko_min_str = f"{day['hko_min']:.0f}°C" if day["hko_min"] is not None else "—"
+                    st.metric(
+                        label="🌡️ Suhu (HKO Forecast)",
+                        value=f"{hko_max_str} / {hko_min_str}",
+                        delta="Max / Min",
+                        delta_color="off",
+                    )
+                else:
+                    st.metric(label="🌡️ Suhu (HKO Forecast)", value="Data tidak tersedia")
+
+                # Actual data if resolved
+                if day["has_actual"]:
+                    act_max_str = f"{day['actual_max']:.1f}°C" if day["actual_max"] is not None else "—"
+                    act_min_str = f"{day['actual_min']:.1f}°C" if day["actual_min"] is not None else "—"
+                    st.metric(
+                        label="✅ Aktual Terukur",
+                        value=f"{act_max_str} / {act_min_str}",
+                        delta="Data HKO terverifikasi",
+                        delta_color="off",
+                    )
+
+                # Rain probability
+                if rain_p is not None:
+                    rain_bar = int(rain_p * 10)
+                    rain_str = f"{rain_p * 100:.0f}%"
+                    st.markdown(
+                        f"🌧️ **Peluang Hujan**: `{rain_str}` {'🔵' * rain_bar}{'⚪' * (10 - rain_bar)}"
+                    )
+
+                # Humidity
+                if day["hko_humidity"] is not None:
+                    st.markdown(f"💧 **Kelembaban**: `{day['hko_humidity']:.0f}%`")
+
+                # Wind
+                if day["hko_wind"]:
+                    st.markdown(f"💨 **Angin**: {day['hko_wind'][:60]}")
+
+                # Model prediction
+                st.markdown("---")
+                if day["has_model_prediction"]:
+                    decision = day["model_decision"]
+                    badge = "🟢 BUY" if decision == "BUY" else "🟡 HOLD"
+                    prob_str = f"{day['model_best_prob']:.0%}" if day["model_best_prob"] is not None else "—"
+                    edge_str = f"{day['model_best_edge']:+.1%}" if day["model_best_edge"] is not None else "—"
+                    st.markdown(
+                        f"🤖 **Model**: {badge} `{day['model_best_outcome']}`  "
+                        f"\nProb: `{prob_str}` · Edge: `{edge_str}`"
+                    )
+                else:
+                    st.caption("🤖 Model: Belum ada prediksi")
+
+                # HKO update time
+                if day["hko_updated_at"]:
+                    st.caption(
+                        f"Diperbarui: `{day['hko_updated_at'].strftime('%d %b %H:%M UTC')}`"
+                    )
+
+        st.markdown("---")
+
+        # ---------------------------------------------------------
+        # 4. Section 35 Quantitative Go/No-Go Gates
+        # ---------------------------------------------------------
+        st.subheader("4. 🛡️ Section 35 Quantitative Go/No-Go Gates")
 
         # Overall Verdict Banner
         if gate_res.verdict == "READY_FOR_LIVE_EXPERIMENT":
@@ -292,7 +458,7 @@ try:
         # ---------------------------------------------------------
         # 4. Latest Predictions & Signals Table
         # ---------------------------------------------------------
-        st.subheader("4. 🎯 Latest Predictions & Signals")
+        st.subheader("5. 🎯 Latest Predictions & Signals")
         if not pred_df.empty:
             # Filter bar
             f_col1, f_col2, f_col3 = st.columns([2, 2, 4])
@@ -372,7 +538,7 @@ try:
         # ---------------------------------------------------------
         # 5. Polymarket Price vs Model Probability Chart
         # ---------------------------------------------------------
-        st.subheader("5. 📈 Polymarket Price vs Model Probability")
+        st.subheader("6. 📈 Polymarket Price vs Model Probability")
         markets_list = get_active_markets_list(session)
         if markets_list:
             m_options = {
@@ -404,7 +570,7 @@ try:
         # ---------------------------------------------------------
         # 6. Paper Trading History & Cumulative PnL
         # ---------------------------------------------------------
-        st.subheader("6. 💼 Paper Trading Performance & Cumulative PnL")
+        st.subheader("7. 💼 Paper Trading Performance & Cumulative PnL")
         m_c1, m_c2, m_c3, m_c4 = st.columns(4)
 
         total_trades = len(trades_df)

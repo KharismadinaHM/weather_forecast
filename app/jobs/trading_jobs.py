@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.collectors.bucket_parser import BucketParser
 from app.features.builder import DatasetBuilder
 from app.logging_config import get_logger
-from app.ml.distribution import ContinuousToBucketMapper
+from app.ml.baselines import HKOFailoverBaseline
 from app.ml.models import WeatherMLModel
 from app.storage.db import get_db_session
 from app.storage.models import PaperTrade, PolymarketMarket, Prediction
@@ -61,14 +61,26 @@ def run_prediction_and_signals_job(
                 if ml_model.is_fitted:
                     model_probs = ml_model.predict_buckets(feature_row, buckets)
                 else:
-                    mean_temp = (
-                        (feature_row.get("hko_forecast_min_temp") or feature_row.get("min_temp_lag1") or 27.0)
-                        if is_low
-                        else (feature_row.get("hko_forecast_max_temp") or feature_row.get("max_temp_lag1") or 33.0)
-                    )
-                    model_probs = ContinuousToBucketMapper.map_distribution_to_buckets(
-                        buckets, mean=float(mean_temp), std=1.0
-                    )
+                    # Use HKO Failover Baseline with lead-day adaptive uncertainty
+                    # instead of hardcoded std=1.0 which caused false positive edges.
+                    hko_baseline = HKOFailoverBaseline()
+
+                    if is_low:
+                        # For low-temp markets, use min temp forecast
+                        low_feature_row = feature_row.copy()
+                        min_temp = (
+                            feature_row.get("hko_forecast_min_temp")
+                            or feature_row.get("min_temp_lag1")
+                        )
+                        if min_temp is not None:
+                            low_feature_row["hko_forecast_max_temp"] = min_temp
+                        model_probs = hko_baseline.predict_buckets(
+                            low_feature_row, buckets, target_date=m.target_date
+                        )
+                    else:
+                        model_probs = hko_baseline.predict_buckets(
+                            feature_row, buckets, target_date=m.target_date
+                        )
 
                 results = s_generator.process_market_signals(
                     session=sess,

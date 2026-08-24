@@ -16,9 +16,122 @@ from app.storage.models import (
     PolymarketPrice,
     Prediction,
     Signal,
+    WeatherDaily,
     WeatherForecast,
     WeatherObservation,
 )
+
+
+def get_3day_forecast(session: Session) -> list[dict[str, Any]]:
+    """Fetch 3-day temperature forecast combining HKO forecast, model predictions & actuals.
+
+    Priority per day:
+    1. HKO 9-day forecast (most authoritative, latest revision)
+    2. Model predictions from the active Polymarket market
+    3. WeatherDaily actual (if already resolved)
+    """
+    now = datetime.now(UTC)
+    today_hkt = (now + timedelta(hours=8)).date()
+
+    results: list[dict[str, Any]] = []
+
+    for day_offset in range(3):
+        target_d = today_hkt + timedelta(days=day_offset)
+
+        # --- HKO Forecast: latest revision for this target date ---
+        hko_fc = session.scalars(
+            select(WeatherForecast)
+            .where(
+                WeatherForecast.target_date == target_d,
+                WeatherForecast.source == "hko_9day",
+            )
+            .order_by(desc(WeatherForecast.forecast_created_at))
+            .limit(1)
+        ).first()
+
+        hko_max = float(hko_fc.forecast_max_temperature) if (hko_fc and hko_fc.forecast_max_temperature) else None
+        hko_min = float(hko_fc.forecast_min_temperature) if (hko_fc and hko_fc.forecast_min_temperature) else None
+        hko_rain_prob = float(hko_fc.rain_probability) if (hko_fc and hko_fc.rain_probability is not None) else None
+        hko_humidity = float(hko_fc.humidity) if (hko_fc and hko_fc.humidity is not None) else None
+        hko_wind = hko_fc.wind if hko_fc else None
+        hko_updated_at = hko_fc.forecast_created_at if hko_fc else None
+
+        # --- Model predictions for this target date (from Polymarket markets) ---
+        market = session.scalars(
+            select(PolymarketMarket)
+            .where(
+                PolymarketMarket.target_date == target_d,
+                PolymarketMarket.market_type != "temperature_low",
+            )
+            .order_by(desc(PolymarketMarket.status == "active"))
+            .limit(1)
+        ).first()
+
+        model_best_outcome: str | None = None
+        model_best_prob: float | None = None
+        model_best_edge: float | None = None
+        model_decision: str | None = None
+
+        if market:
+            best_pred = session.scalars(
+                select(Prediction)
+                .where(Prediction.market_id == market.market_id)
+                .order_by(desc(Prediction.edge))
+                .limit(1)
+            ).first()
+            if best_pred:
+                model_best_outcome = best_pred.outcome
+                model_best_prob = float(best_pred.model_probability)
+                model_best_edge = float(best_pred.edge)
+                model_decision = "BUY" if model_best_edge >= 0.10 else "HOLD"
+
+        # --- Actual observed data (only available for today or past) ---
+        actual = session.scalars(
+            select(WeatherDaily)
+            .where(
+                WeatherDaily.date == target_d,
+                WeatherDaily.station == "Hong Kong Observatory",
+            )
+        ).first()
+
+        actual_max = float(actual.max_temperature) if (actual and actual.max_temperature is not None) else None
+        actual_min = float(actual.min_temperature) if (actual and actual.min_temperature is not None) else None
+
+        # Label for the day
+        if day_offset == 0:
+            day_label = "Hari Ini"
+        elif day_offset == 1:
+            day_label = "Besok"
+        else:
+            day_label = "Lusa"
+
+        results.append({
+            "day_offset": day_offset,
+            "day_label": day_label,
+            "target_date": target_d,
+            "target_date_str": target_d.strftime("%d %b %Y"),
+            "weekday": target_d.strftime("%A"),
+            # HKO Forecast
+            "hko_max": hko_max,
+            "hko_min": hko_min,
+            "hko_rain_prob": hko_rain_prob,
+            "hko_humidity": hko_humidity,
+            "hko_wind": hko_wind,
+            "hko_updated_at": hko_updated_at,
+            "has_hko_forecast": hko_fc is not None,
+            # Model Prediction
+            "model_best_outcome": model_best_outcome,
+            "model_best_prob": model_best_prob,
+            "model_best_edge": model_best_edge,
+            "model_decision": model_decision,
+            "has_model_prediction": market is not None and model_best_outcome is not None,
+            # Actual (if resolved)
+            "actual_max": actual_max,
+            "actual_min": actual_min,
+            "has_actual": actual is not None,
+        })
+
+    return results
 
 
 def get_freshness_metrics(session: Session) -> dict[str, Any]:
@@ -353,9 +466,38 @@ def evaluate_section35_gates_from_db(session: Session) -> QuantitativeGateResult
 
 
 def get_diurnal_timing_insight(session: Session) -> dict[str, Any]:
-    """Calculate tactical diurnal peak and minimum timing and recommended entry windows (WIB vs HKT)."""
+    """Calculate tactical diurnal peak and minimum timing and recommended entry windows (WIB vs HKT).
+
+    Enhanced with:
+    - HKO forecast cross-validation to prevent physically unrealistic recommendations
+    - Model temperature estimate display for user transparency
+    - Deviation warnings when recommendation diverges from official forecast
+    """
     now = datetime.now(UTC)
     today_hkt = (now + timedelta(hours=8)).date()
+
+    # ---- Fetch latest HKO forecast for physical validation ----
+    hko_fc = session.scalars(
+        select(WeatherForecast)
+        .where(WeatherForecast.target_date >= today_hkt)
+        .order_by(
+            WeatherForecast.target_date.asc(),
+            desc(WeatherForecast.forecast_created_at),
+        )
+        .limit(1)
+    ).first()
+
+    hko_max_temp = float(hko_fc.forecast_max_temperature) if (hko_fc and hko_fc.forecast_max_temperature) else None
+    hko_min_temp = float(hko_fc.forecast_min_temperature) if (hko_fc and hko_fc.forecast_min_temperature) else None
+
+    # ---- Fetch latest observation for real-time reference ----
+    latest_obs = session.scalars(
+        select(WeatherObservation)
+        .where(WeatherObservation.is_authoritative.is_(True))
+        .order_by(desc(WeatherObservation.observed_at))
+        .limit(1)
+    ).first()
+    current_temp = float(latest_obs.temperature) if (latest_obs and latest_obs.temperature) else None
 
     # 1. Highest Temperature Market (Active or latest)
     high_mkt = session.scalars(
@@ -383,11 +525,14 @@ def get_diurnal_timing_insight(session: Session) -> dict[str, Any]:
     high_entry_hkt = "09:00 - 10:00 HKT"
     high_entry_wib = "08:00 - 09:00 WIB"
 
-    high_rec_outcome = "32°C"
+    # Defaults based on HKO forecast (not arbitrary hardcoded values)
+    high_model_temp_estimate = hko_max_temp or 33.0
+    high_rec_outcome = f"{high_model_temp_estimate:.0f}°C"
     high_rec_prob = 0.40
     high_rec_price = 0.28
     high_rec_edge = 0.12
-    high_decision = "BUY"
+    high_decision = "HOLD"
+    high_deviation_warning = ""
 
     if high_mkt:
         preds = session.scalars(
@@ -397,11 +542,33 @@ def get_diurnal_timing_insight(session: Session) -> dict[str, Any]:
         ).all()
         if preds:
             best_pred = preds[0]
+
+            # Physical validation: check if best prediction's outcome is
+            # physically plausible vs HKO forecast
+            if hko_max_temp is not None:
+                # Try to find a prediction whose outcome is close to HKO forecast
+                validated_pred = _find_physically_validated_prediction(
+                    preds, hko_max_temp, max_deviation=2.0
+                )
+                if validated_pred is not None:
+                    best_pred = validated_pred
+                else:
+                    # All predictions deviate significantly from HKO forecast
+                    high_deviation_warning = (
+                        f"⚠️ Rekomendasi model ({best_pred.outcome}) menyimpang "
+                        f"dari forecast HKO ({hko_max_temp:.0f}°C). Gunakan dengan hati-hati."
+                    )
+
             high_rec_outcome = best_pred.outcome
             high_rec_prob = float(best_pred.model_probability)
             high_rec_price = float(best_pred.market_probability)
             high_rec_edge = float(best_pred.edge)
-            high_decision = "BUY" if high_rec_edge >= 0.08 else "HOLD"
+            high_decision = "BUY" if high_rec_edge >= 0.10 else "HOLD"
+
+            # Extract numeric temperature from outcome for estimate
+            temp_val = _extract_temp_from_outcome(best_pred.outcome)
+            if temp_val is not None:
+                high_model_temp_estimate = temp_val
 
     # Low Temp Timing (Minimum radiative cooling: 05:00 - 06:30 HKT / 04:00 - 05:30 WIB)
     low_peak_hkt = "05:30 HKT"
@@ -409,11 +576,14 @@ def get_diurnal_timing_insight(session: Session) -> dict[str, Any]:
     low_entry_hkt = "22:00 - 23:00 HKT"
     low_entry_wib = "21:00 - 22:00 WIB"
 
-    low_rec_outcome = "27°C"
+    # Defaults based on HKO forecast
+    low_model_temp_estimate = hko_min_temp or 27.0
+    low_rec_outcome = f"{low_model_temp_estimate:.0f}°C"
     low_rec_prob = 0.45
     low_rec_price = 0.25
     low_rec_edge = 0.20
-    low_decision = "BUY"
+    low_decision = "HOLD"
+    low_deviation_warning = ""
 
     if low_mkt:
         preds = session.scalars(
@@ -423,11 +593,29 @@ def get_diurnal_timing_insight(session: Session) -> dict[str, Any]:
         ).all()
         if preds:
             best_pred = preds[0]
+
+            # Physical validation against HKO forecast
+            if hko_min_temp is not None:
+                validated_pred = _find_physically_validated_prediction(
+                    preds, hko_min_temp, max_deviation=2.0
+                )
+                if validated_pred is not None:
+                    best_pred = validated_pred
+                else:
+                    low_deviation_warning = (
+                        f"⚠️ Rekomendasi model ({best_pred.outcome}) menyimpang "
+                        f"dari forecast HKO ({hko_min_temp:.0f}°C). Gunakan dengan hati-hati."
+                    )
+
             low_rec_outcome = best_pred.outcome
             low_rec_prob = float(best_pred.model_probability)
             low_rec_price = float(best_pred.market_probability)
             low_rec_edge = float(best_pred.edge)
-            low_decision = "BUY" if low_rec_edge >= 0.08 else "HOLD"
+            low_decision = "BUY" if low_rec_edge >= 0.10 else "HOLD"
+
+            temp_val = _extract_temp_from_outcome(best_pred.outcome)
+            if temp_val is not None:
+                low_model_temp_estimate = temp_val
 
     # User-requested comprehensive phrasing covering both Highest & Lowest temp
     formatted_msg = (
@@ -449,6 +637,9 @@ def get_diurnal_timing_insight(session: Session) -> dict[str, Any]:
         "high_market_price": high_rec_price,
         "high_edge": high_rec_edge,
         "high_decision": high_decision,
+        "high_model_temp_estimate": high_model_temp_estimate,
+        "high_deviation_warning": high_deviation_warning,
+        # Legacy aliases for backward compatibility
         "recommended_outcome": high_rec_outcome,
         "recommended_entry_hkt": high_entry_hkt,
         "recommended_entry_wib": high_entry_wib,
@@ -467,5 +658,59 @@ def get_diurnal_timing_insight(session: Session) -> dict[str, Any]:
         "low_market_price": low_rec_price,
         "low_edge": low_rec_edge,
         "low_decision": low_decision,
+        "low_model_temp_estimate": low_model_temp_estimate,
+        "low_deviation_warning": low_deviation_warning,
+        # HKO Forecast reference values
+        "hko_forecast_max_temp": hko_max_temp,
+        "hko_forecast_min_temp": hko_min_temp,
+        "current_temp": current_temp,
         "formatted_insight": formatted_msg,
     }
+
+
+def _extract_temp_from_outcome(outcome: str) -> float | None:
+    """Extract numeric temperature value from outcome label like '33°C', '<=31°C', '31 - 32°C'."""
+    import re
+
+    # Try range pattern first: "31 - 32°C" -> average
+    range_match = re.search(r"(\d+(?:\.\d+)?)\s*[-–—to]+\s*(\d+(?:\.\d+)?)", outcome)
+    if range_match:
+        low_v = float(range_match.group(1))
+        high_v = float(range_match.group(2))
+        return (low_v + high_v) / 2.0
+
+    # Open lower: "<=31" -> 31
+    lower_match = re.search(r"[<≤]=?\s*(\d+(?:\.\d+)?)", outcome)
+    if lower_match:
+        return float(lower_match.group(1))
+
+    # Open upper: ">=34", "34+" -> 34
+    upper_match = re.search(r"[>≥]=?\s*(\d+(?:\.\d+)?)", outcome)
+    if upper_match:
+        return float(upper_match.group(1))
+
+    # Single degree: "33°C", "33"
+    single_match = re.search(r"(\d+(?:\.\d+)?)", outcome)
+    if single_match:
+        return float(single_match.group(1))
+
+    return None
+
+
+def _find_physically_validated_prediction(
+    preds: list,
+    hko_forecast_temp: float,
+    max_deviation: float = 2.0,
+) -> Any | None:
+    """Find the best-edge prediction whose outcome is within max_deviation of HKO forecast.
+
+    Returns the best physically plausible prediction, or None if all deviate too much.
+    """
+    for pred in preds:
+        temp_val = _extract_temp_from_outcome(pred.outcome)
+        if temp_val is not None and abs(temp_val - hko_forecast_temp) <= max_deviation:
+            # Also require positive edge for the recommendation to be actionable
+            if float(pred.edge) > 0:
+                return pred
+    return None
+

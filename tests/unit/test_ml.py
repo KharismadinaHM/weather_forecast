@@ -46,9 +46,13 @@ def test_continuous_to_bucket_mapper_bounds() -> None:
     # All probabilities should be positive and sum to 1.0
     assert len(probs) == 4
     assert math.isclose(sum(probs.values()), 1.0, rel_tol=1e-5)
-    # Mean is 31.0 -> '31' should have high probability
+    # Mean is 31.0 -> '31' bucket (single-degree, covers 30.5-31.5) should
+    # dominate the far tail '>=34' but may be smaller than open-lower '<=30'
+    # (which captures everything below 30.5) due to MIN_STD_FLOOR=1.2
     assert probs["31"] > probs[">=34"]
-    assert probs["31"] > probs["<=30"]
+    # The two central buckets together should dominate either tail
+    assert (probs["31"] + probs["32 - 33"]) > probs["<=30"]
+    assert (probs["31"] + probs["32 - 33"]) > probs[">=34"]
 
 
 def test_climatology_baseline(db_session: Session) -> None:

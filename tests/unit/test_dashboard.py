@@ -250,9 +250,20 @@ def test_get_diurnal_timing_insight(db_session: Session) -> None:
 
     insight = get_diurnal_timing_insight(db_session)
     assert insight["recommended_outcome"] == "34°C"
-    assert insight["decision"] == "BUY"
+    assert insight["decision"] == "BUY"  # edge 0.18 >= 0.10 threshold
     assert "14:00 HKT" in insight["peak_hkt"]
     assert "13:00 WIB" in insight["peak_wib"]
     assert "WIB" in insight["recommended_entry_wib"]
     assert "Suhu tertinggi di HK pd tgl" in insight["formatted_insight"]
     assert "baiknya anda buy market pada suhu 34°C" in insight["formatted_insight"]
+
+    # Verify new fields from enhanced insight
+    assert "high_model_temp_estimate" in insight
+    assert insight["high_model_temp_estimate"] == 34.0  # extracted from "34°C"
+    assert "low_model_temp_estimate" in insight
+    assert "high_deviation_warning" in insight
+    assert "low_deviation_warning" in insight
+    # hko_forecast_max_temp may be None if no forecast in test DB
+    assert "hko_forecast_max_temp" in insight
+    assert "current_temp" in insight
+

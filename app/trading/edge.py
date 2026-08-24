@@ -40,8 +40,8 @@ class OpportunityEvaluation:
 class EdgeEngine:
     """Calculates statistical edge and net expected value against Polymarket binary outcomes."""
 
-    DEFAULT_MIN_EDGE: float = 0.08  # Minimum gross edge threshold (Section 12)
-    DEFAULT_MIN_NET_EV: float = 0.05  # Minimum net expected value threshold (Section 12)
+    DEFAULT_MIN_EDGE: float = 0.10  # Minimum gross edge threshold (raised to reduce false signals)
+    DEFAULT_MIN_NET_EV: float = 0.07  # Minimum net expected value threshold
 
     def __init__(
         self,

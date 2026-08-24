@@ -2,6 +2,7 @@
 
 from app.dashboard.queries import (
     evaluate_section35_gates_from_db,
+    get_3day_forecast,
     get_diurnal_timing_insight,
     get_freshness_metrics,
     get_latest_predictions_df,
@@ -16,4 +17,5 @@ __all__ = [
     "get_paper_trades_and_pnl_df",
     "evaluate_section35_gates_from_db",
     "get_diurnal_timing_insight",
+    "get_3day_forecast",
 ]
