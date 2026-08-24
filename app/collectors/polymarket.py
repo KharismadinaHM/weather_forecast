@@ -276,12 +276,19 @@ class PolymarketCollector:
             parsed_buckets = BucketParser.parse_bucket_schema([str(o) for o in raw_outcomes])
             outcome_bucket_schema = [b.to_dict() for b in parsed_buckets]
 
+        is_low = (
+            "lowest" in f"{question} {slug}".lower()
+            or "minimum" in f"{question} {slug}".lower()
+            or "min temp" in f"{question} {slug}".lower()
+        )
+        market_type = "temperature_low" if is_low else "temperature_high"
+
         market = PolymarketMarket(
             market_id=market_id,
             event_id=event_id or "unknown_event",
             slug=slug,
             question=question,
-            market_type="temperature_high",
+            market_type=market_type,
             outcome_bucket_schema=outcome_bucket_schema,
             target_date=target_date,
             metric="temperature_celsius",

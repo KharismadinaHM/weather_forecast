@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.collectors.bucket_parser import BucketParser
 from app.features.builder import DatasetBuilder
 from app.logging_config import get_logger
+from app.ml.distribution import ContinuousToBucketMapper
 from app.ml.models import WeatherMLModel
 from app.storage.db import get_db_session
 from app.storage.models import PolymarketMarket, Prediction
@@ -56,11 +57,18 @@ def run_prediction_and_signals_job(
                     decision_timestamp=datetime.now(UTC),
                 )
 
+                is_low = m.market_type == "temperature_low"
                 if ml_model.is_fitted:
                     model_probs = ml_model.predict_buckets(feature_row, buckets)
                 else:
-                    uniform_p = 1.0 / max(1, len(buckets))
-                    model_probs = {b.raw_label: uniform_p for b in buckets}
+                    mean_temp = (
+                        (feature_row.get("hko_forecast_min_temp") or feature_row.get("min_temp_lag1") or 27.0)
+                        if is_low
+                        else (feature_row.get("hko_forecast_max_temp") or feature_row.get("max_temp_lag1") or 33.0)
+                    )
+                    model_probs = ContinuousToBucketMapper.map_distribution_to_buckets(
+                        buckets, mean=float(mean_temp), std=1.0
+                    )
 
                 results = s_generator.process_market_signals(
                     session=sess,

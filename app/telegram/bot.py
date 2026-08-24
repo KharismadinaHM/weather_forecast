@@ -168,7 +168,7 @@ class TelegramCommandHandler:
 
     def _handle_prediction(self, session: Session) -> str:
         latest_preds = session.scalars(
-            select(Prediction).order_by(Prediction.prediction_timestamp.desc()).limit(10)
+            select(Prediction).order_by(Prediction.prediction_timestamp.desc()).limit(30)
         ).all()
 
         if not latest_preds:
@@ -177,26 +177,32 @@ class TelegramCommandHandler:
                 "No predictions generated yet. Run a prediction cycle first."
             )
 
-        m_id = latest_preds[0].market_id
-        matching_preds = [p for p in latest_preds if p.market_id == m_id]
-        ts_str = matching_preds[0].prediction_timestamp.strftime("%Y-%m-%d %H:%M UTC")
+        # Group by market_id
+        markets_seen: dict[str, list[Prediction]] = {}
+        for p in latest_preds:
+            if p.market_id not in markets_seen:
+                markets_seen[p.market_id] = []
+            markets_seen[p.market_id].append(p)
 
-        lines = [
-            "🔮 <b>LATEST PREDICTION RUN</b>\n",
-            f"<b>Market ID:</b> <code>{html.escape(m_id)}</code>",
-            f"<b>Model:</b> {html.escape(matching_preds[0].model_version)}",
-            f"<b>Timestamp:</b> {ts_str}\n",
-            "<b>Probabilities & Edge:</b>",
-        ]
+        lines = ["🔮 <b>LATEST MODEL PREDICTIONS</b>\n"]
+        for m_id, preds in list(markets_seen.items())[:3]:
+            m_obj = session.get(PolymarketMarket, m_id)
+            title = m_obj.question if m_obj else m_id
+            m_type_badge = "❄️ Min Temp" if (m_obj and m_obj.market_type == "temperature_low") else "🔥 Max Temp"
+            ts_str = preds[0].prediction_timestamp.strftime("%Y-%m-%d %H:%M UTC")
 
-        for p in matching_preds:
-            lines.append(
-                f"• <b>{html.escape(p.outcome)}:</b> Model {p.model_probability:.1%} vs "
-                f"Market {p.market_probability:.1%} "
-                f"(Edge: <code>{p.edge:+.1%}</code>, Net EV: <code>{p.expected_value:+.1%}</code>)"
-            )
+            lines.append(f"<b>{m_type_badge}:</b> {html.escape(title)}")
+            lines.append(f"<b>Time:</b> {ts_str}")
+            lines.append("<b>Probabilities & Edge:</b>")
+            for p in preds:
+                lines.append(
+                    f"• <b>{html.escape(p.outcome)}:</b> Model {p.model_probability:.1%} vs "
+                    f"Market {p.market_probability:.1%} "
+                    f"(Edge: <code>{p.edge:+.1%}</code>, Net EV: <code>{p.expected_value:+.1%}</code>)"
+                )
+            lines.append("")
 
-        return "\n".join(lines)
+        return "\n".join(lines).strip()
 
     def _handle_performance(self, session: Session) -> str:
         trades = session.scalars(select(PaperTrade).where(PaperTrade.status == "CLOSED")).all()

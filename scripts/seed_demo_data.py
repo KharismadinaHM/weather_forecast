@@ -174,6 +174,92 @@ def seed_demo_data(session: Session) -> None:
                 )
                 session.add(paper)
 
+    # 3. Create Lowest Temperature Markets for Today and Tomorrow
+    low_bucket_schemas = ["<=26°C", "27°C", "28°C", ">=29°C"]
+    for m_idx in range(0, 2):
+        target_d = today + timedelta(days=m_idx)
+        market_id = f"poly_hk_low_{target_d.strftime('%Y%m%d')}"
+
+        existing_mkt = session.get(PolymarketMarket, market_id)
+        if not existing_mkt:
+            mkt = PolymarketMarket(
+                market_id=market_id,
+                event_id=f"evt_hk_low_{target_d.strftime('%Y%m%d')}",
+                slug=f"lowest-temperature-hong-kong-{target_d.strftime('%B-%d-%Y').lower()}",
+                question=f"Lowest temperature in Hong Kong on {target_d.strftime('%B %d, %Y')}?",
+                market_type="temperature_low",
+                target_date=target_d,
+                status="active",
+                outcome_bucket_schema=low_bucket_schemas,
+                resolution_source_raw="https://www.hko.gov.hk - HKO Daily Extract",
+            )
+            session.add(mkt)
+            session.flush()
+
+        for idx, b_label in enumerate(low_bucket_schemas):
+            token_id = f"tok_{market_id}_{idx}"
+            out_obj = session.scalars(
+                select(PolymarketOutcome).where(
+                    PolymarketOutcome.market_id == market_id,
+                    PolymarketOutcome.token_id == token_id,
+                )
+            ).first()
+
+            if not out_obj:
+                parsed = BucketParser.parse_bucket_schema([b_label])[0]
+                out_obj = PolymarketOutcome(
+                    market_id=market_id,
+                    token_id=token_id,
+                    outcome_label=b_label,
+                    outcome_bucket_low=parsed.low,
+                    outcome_bucket_high=parsed.high,
+                    outcome_value=str(idx),
+                )
+                session.add(out_obj)
+                session.flush()
+
+            base_price = 0.25 + (0.20 if b_label == "27°C" else -0.05)
+            session.add(
+                PolymarketPrice(
+                    market_id=market_id,
+                    token_id=token_id,
+                    timestamp=now - timedelta(hours=1),
+                    price=round(base_price, 3),
+                )
+            )
+
+            model_p = 0.20 + (0.35 if b_label == "27°C" else 0.05) + random.uniform(-0.02, 0.03)
+            mkt_p = base_price
+            edge_val = model_p - mkt_p
+            net_ev = (model_p * (1.0 - 0.01)) - (mkt_p * (1.0 + 0.01))
+
+            pred = Prediction(
+                market_id=market_id,
+                prediction_timestamp=now - timedelta(hours=1) + timedelta(days=m_idx),
+                model_version="weather-v001",
+                outcome=b_label,
+                model_probability=round(model_p, 3),
+                market_probability=round(mkt_p, 3),
+                edge=round(edge_val, 3),
+                expected_value=round(net_ev, 3),
+            )
+            session.add(pred)
+            session.flush()
+
+            is_buy = edge_val >= 0.08 and net_ev >= 0.05
+            sig = Signal(
+                prediction_id=pred.id,
+                decision="BUY" if is_buy else "HOLD",
+                reason="Positive EV & actionable statistical edge (Min Temp)"
+                if is_buy
+                else "Edge below threshold",
+                recommended_price=round(mkt_p, 3) if is_buy else None,
+                recommended_size=1.0 if is_buy else 0.0,
+                risk_limit=2.0,
+                created_at=pred.prediction_timestamp,
+            )
+            session.add(sig)
+
     session.commit()
     logger.info("Demo data generation successfully completed")
 
