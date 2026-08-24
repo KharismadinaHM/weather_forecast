@@ -44,6 +44,7 @@ services:
       dockerfile: Dockerfile
     container_name: hk_weather_agent_prod
     restart: unless-stopped
+    command: python -m app.jobs.scheduler --daemon --interval 900
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +69,30 @@ services:
         limits:
           cpus: "1.50"
           memory: 1536M
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hk_weather_bot_prod
+    restart: unless-stopped
+    command: python -m app.telegram.bot
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: INFO
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-hk_weather}
+      POSTGRES_USER: ${POSTGRES_USER:-hkw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hkw_prod_secret_pass}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hkw}:${POSTGRES_PASSWORD:-hkw_prod_secret_pass}@postgres:5432/${POSTGRES_DB:-hk_weather}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
 
   dashboard:
     build:
